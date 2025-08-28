@@ -13,6 +13,7 @@ urlpatterns = [
     path('api/v1/', include('apps.exercises.urls')),
     path('api/v1/', include('apps.workouts.urls')),
     path('api/v1/recommendations/', include('apps.recommendations.urls')),
+    path('api/v1/notifications/', include('apps.notifications.urls')),
     
     # Token de autenticação (alternativa ao login customizado)
     path('api-token-auth/', obtain_auth_token),
@@ -63,3 +64,4 @@ urlpatterns = [
 # /api/v1/sessions/{id}/start_exercise/      - Iniciar exercício
 # /api/v1/sessions/{id}/complete_exercise/   - Completar exercício
 # /api/v1/sessions/{id}/status/              - Status da sessão
+# path('api/v1/notifications/', include('apps.notifications.urls')),  # Comentar temporariamente
