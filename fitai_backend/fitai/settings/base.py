@@ -37,6 +37,7 @@ LOCAL_APPS = [
     'apps.exercises', 
     'apps.workouts',
     'apps.recommendations',
+    'apps.notifications', 
     'apps.core',
 ]
 
@@ -454,7 +455,7 @@ def validate_ai_configuration():
         if config('STRICT_VALIDATION', default=False, cast=bool):
             sys.exit(1)
     else:
-        print("✅ Configurações de IA validadas com sucesso")
+        print("Configurações de IA validadas com sucesso")
 
 # Executar validação se não estiver em testes
 import sys
@@ -492,3 +493,97 @@ AI_ALERT_EMAILS=admin@fitai.com,dev@fitai.com
 # Security
 STRICT_VALIDATION=False
 """
+
+# =============================================================================
+# 🚦 RATE LIMITING CONFIGURATION - ADICIONAR AO settings/base.py
+# =============================================================================
+
+# Rate limiting para APIs de notificações
+REST_FRAMEWORK_THROTTLE_RATES = {
+    'notifications': '100/hour',         # APIs básicas de notificações
+    'ai_notifications': '20/hour',       # APIs que usam IA
+    'notification_stats': '50/hour',     # APIs de estatísticas
+    'user': '1000/hour',                 # Limite geral por usuário
+    'anon': '100/hour',                  # Usuários anônimos
+}
+
+# Adicionar ao REST_FRAMEWORK existente
+REST_FRAMEWORK.update({
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.UserRateThrottle',
+        'rest_framework.throttling.AnonRateThrottle'
+    ],
+    'DEFAULT_THROTTLE_RATES': REST_FRAMEWORK_THROTTLE_RATES
+})
+
+# =============================================================================
+# 📊 CONFIGURAÇÕES DE NOTIFICAÇÕES
+# =============================================================================
+
+# Configurações específicas do sistema de notificações
+NOTIFICATION_SETTINGS = {
+    'MAX_NOTIFICATIONS_PER_PAGE': 50,
+    'DEFAULT_PAGE_SIZE': 20,
+    'MAX_SCHEDULE_DAYS_AHEAD': 14,
+    'MAX_STATS_PERIOD_DAYS': 90,
+    'ENABLE_AI_PERSONALIZATION': True,
+    'DEFAULT_NOTIFICATION_PRIORITY': 'normal',
+    'AUTO_MARK_READ_AFTER_DAYS': 30,
+    'CLEANUP_OLD_NOTIFICATIONS_DAYS': 90,
+}
+
+# Templates padrão que serão criados automaticamente
+DEFAULT_NOTIFICATION_TEMPLATES = {
+    'workout_reminder': {
+        'title': 'Hora do treino, {{user_name}}!',
+        'message': 'Seu corpo está pronto para mais um treino incrível. Vamos lá?',
+        'variables': ['user_name', 'suggested_workout', 'last_workout_days']
+    },
+    'achievement': {
+        'title': 'Parabéns, {{user_name}}! 🎉',
+        'message': 'Você acabou de conquistar: {{achievement_name}}. Continue assim!',
+        'variables': ['user_name', 'achievement_name', 'achievement_description']
+    },
+    'motivation': {
+        'title': 'Motivação do dia, {{user_name}}',
+        'message': 'Lembre-se: cada treino te deixa mais forte. Você está no caminho certo!',
+        'variables': ['user_name', 'progress_percentage', 'days_active']
+    },
+    'progress': {
+        'title': 'Seu progresso semanal, {{user_name}}',
+        'message': 'Esta semana você treinou {{workouts_count}} vezes e queimou {{calories}} calorias!',
+        'variables': ['user_name', 'workouts_count', 'calories', 'improvement_areas']
+    }
+}
+
+# =============================================================================
+# 🔍 LOGGING ESPECÍFICO PARA NOTIFICAÇÕES - Adicionar ao LOGGING existente
+# =============================================================================
+
+# Adicionar estes handlers e loggers ao LOGGING existente
+NOTIFICATION_LOGGING_HANDLERS = {
+    'notification_file': {
+        'class': 'logging.handlers.RotatingFileHandler',
+        'filename': BASE_DIR / 'logs' / 'notifications.log',
+        'maxBytes': 1024*1024*5,  # 5 MB
+        'backupCount': 5,
+        'formatter': 'verbose',
+    },
+}
+
+NOTIFICATION_LOGGING_LOGGERS = {
+    'apps.notifications': {
+        'handlers': ['console', 'notification_file'],
+        'level': 'INFO',
+        'propagate': False,
+    },
+    'apps.notifications.services.notification_service': {
+        'handlers': ['console', 'notification_file'], 
+        'level': 'DEBUG' if DEBUG else 'INFO',
+        'propagate': False,
+    },
+}
+
+# Adicionar aos handlers e loggers existentes
+LOGGING['handlers'].update(NOTIFICATION_LOGGING_HANDLERS)
+LOGGING['loggers'].update(NOTIFICATION_LOGGING_LOGGERS)

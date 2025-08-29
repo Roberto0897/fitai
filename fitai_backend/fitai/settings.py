@@ -45,7 +45,7 @@ INSTALLED_APPS = [
     'apps.exercises',
     'apps.workouts',
     'apps.recommendations',
-   # 'apps.notifications',
+    'apps.notifications',
     'apps.core',
 ]
 

@@ -1,9 +1,6 @@
-# =====================================
-# apps/notifications/admin.py
-# =====================================
+# apps/notifications/admin.py - CORRIGIDO PARA MODELS EXPANDIDOS
 from django.contrib import admin
 from django.utils.html import format_html
-from django.urls import reverse
 from django.utils.safestring import mark_safe
 from .models import (
     NotificationPreference, 
@@ -16,28 +13,33 @@ from .models import (
 @admin.register(NotificationPreference)
 class NotificationPreferenceAdmin(admin.ModelAdmin):
     list_display = [
-        'user', 'notification_type', 'delivery_channel', 
-        'enabled', 'frequency_days', 'preferred_time', 'created_at'
+        'user', 'notification_type', 'enabled', 
+        'frequency', 'preferred_time', 'created_at'
     ]
     list_filter = [
-        'notification_type', 'delivery_channel', 'enabled', 
-        'preferred_time', 'only_on_inactive_days'
+        'notification_type', 'enabled', 'frequency', 'created_at'
     ]
-    search_fields = ['user__username', 'user__email']
-    list_editable = ['enabled', 'frequency_days']
+    search_fields = ['user__username', 'user__email', 'notification_type']
+    list_editable = ['enabled', 'frequency']
     
     fieldsets = (
         ('Usuário e Tipo', {
-            'fields': ('user', 'notification_type', 'delivery_channel')
+            'fields': ('user', 'notification_type')
         }),
         ('Configurações Básicas', {
-            'fields': ('enabled', 'frequency_days', 'preferred_time', 'custom_time')
+            'fields': ('enabled', 'frequency', 'preferred_time')
         }),
         ('Configurações Avançadas', {
-            'fields': ('only_on_inactive_days', 'respect_rest_days'),
+            'fields': ('custom_settings',),
+            'classes': ('collapse',)
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'updated_at'),
             'classes': ('collapse',)
         })
     )
+    
+    readonly_fields = ['created_at', 'updated_at']
     
     def get_queryset(self, request):
         return super().get_queryset(request).select_related('user')
@@ -47,38 +49,37 @@ class NotificationPreferenceAdmin(admin.ModelAdmin):
 class NotificationLogAdmin(admin.ModelAdmin):
     list_display = [
         'user', 'notification_type', 'title', 'status_badge', 
-        'delivery_channel', 'scheduled_for', 'engagement_info'
+        'priority', 'created_at', 'engagement_info'
     ]
     list_filter = [
-        'status', 'notification_type', 'delivery_channel', 
-        'priority', 'created_at'
+        'status', 'notification_type', 'priority', 'created_at'
     ]
     search_fields = ['user__username', 'title', 'message']
     readonly_fields = [
         'created_at', 'updated_at', 'sent_at', 'delivered_at', 
-        'opened_at', 'clicked_at', 'engagement_level'
+        'read_at', 'clicked_at'
     ]
     
     fieldsets = (
         ('Informações Básicas', {
             'fields': ('user', 'notification_type', 'title', 'message')
         }),
-        ('Configurações de Entrega', {
-            'fields': ('delivery_channel', 'priority', 'scheduled_for')
+        ('Configurações', {
+            'fields': ('status', 'priority', 'template_id')
         }),
-        ('Status e Rastreamento', {
-            'fields': (
-                'status', 'external_id', 'error_message', 'retry_count'
-            )
+        ('Agendamento', {
+            'fields': ('scheduled_for', 'expires_at', 'retry_count')
         }),
-        ('Timestamps', {
-            'fields': (
-                'sent_at', 'delivered_at', 'opened_at', 'clicked_at'
-            ),
+        ('Tracking de Engajamento', {
+            'fields': ('sent_at', 'delivered_at', 'read_at', 'clicked_at'),
             'classes': ('collapse',)
         }),
-        ('Dados Contextuais', {
-            'fields': ('context_data',),
+        ('Dados Extras', {
+            'fields': ('metadata',),
+            'classes': ('collapse',)
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'updated_at'),
             'classes': ('collapse',)
         })
     )
@@ -88,10 +89,9 @@ class NotificationLogAdmin(admin.ModelAdmin):
             'pending': 'orange',
             'sent': 'blue', 
             'delivered': 'green',
-            'opened': 'purple',
+            'read': 'purple',
             'clicked': 'darkgreen',
-            'failed': 'red',
-            'cancelled': 'gray'
+            'failed': 'red'
         }
         color = colors.get(obj.status, 'gray')
         return format_html(
@@ -103,67 +103,74 @@ class NotificationLogAdmin(admin.ModelAdmin):
     def engagement_info(self, obj):
         if obj.clicked_at:
             return format_html('<span style="color: green;">✓ Clicada</span>')
-        elif obj.opened_at:
-            return format_html('<span style="color: blue;">◐ Aberta</span>')
+        elif obj.read_at:
+            return format_html('<span style="color: blue;">◐ Lida</span>')
         elif obj.delivered_at:
             return format_html('<span style="color: orange;">◑ Entregue</span>')
+        elif obj.sent_at:
+            return format_html('<span style="color: lightblue;">◒ Enviada</span>')
         else:
             return format_html('<span style="color: gray;">○ Pendente</span>')
     engagement_info.short_description = 'Engajamento'
     
     def get_queryset(self, request):
-        return super().get_queryset(request).select_related('user', 'preference')
+        return super().get_queryset(request).select_related('user')
 
 
 @admin.register(NotificationTemplate)
 class NotificationTemplateAdmin(admin.ModelAdmin):
     list_display = [
-        'notification_type', 'name', 'priority', 'delivery_channel', 
-        'active', 'usage_count', 'created_at'
+        'name', 'notification_type', 'priority', 'is_active', 
+        'usage_count', 'created_at'
     ]
-    list_filter = ['notification_type', 'priority', 'delivery_channel', 'active']
-    search_fields = ['name', 'description', 'title_template']
-    list_editable = ['active', 'priority']
+    list_filter = ['notification_type', 'priority', 'is_active', 'created_at']
+    search_fields = ['name', 'notification_type', 'title_template']
+    list_editable = ['is_active', 'priority']
     
     fieldsets = (
         ('Informações Básicas', {
-            'fields': ('notification_type', 'name', 'description')
+            'fields': ('name', 'notification_type', 'priority', 'is_active')
         }),
         ('Templates', {
             'fields': ('title_template', 'message_template'),
             'description': 'Use {{variavel}} para substituições dinâmicas'
         }),
-        ('Configurações', {
-            'fields': ('priority', 'delivery_channel', 'active')
-        }),
-        ('Condições de Uso', {
-            'fields': ('conditions',),
+        ('Variáveis Disponíveis', {
+            'fields': ('variables',),
             'classes': ('collapse',),
-            'description': 'JSON com condições para usar este template'
+            'description': 'Lista JSON das variáveis disponíveis para este template'
         }),
-        ('Estatísticas', {
-            'fields': ('usage_count',),
+        ('Metadados', {
+            'fields': ('created_by', 'usage_count'),
+            'classes': ('collapse',)
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'updated_at'),
             'classes': ('collapse',)
         })
     )
     
+    readonly_fields = ['usage_count', 'created_at', 'updated_at']
+    
     def save_model(self, request, obj, form, change):
-        """Validar JSON antes de salvar"""
+        if not change:  # Criando novo template
+            obj.created_by = request.user
         super().save_model(request, obj, form, change)
 
 
 @admin.register(UserNotificationStats)
 class UserNotificationStatsAdmin(admin.ModelAdmin):
     list_display = [
-        'user', 'total_notifications_received', 'open_rate_display', 
-        'click_rate_display', 'engagement_level', 'most_engaging_type'
+        'user', 'total_sent', 'delivery_rate_display', 
+        'read_rate_display', 'engagement_score_display', 'last_interaction'
     ]
-    list_filter = ['engagement_level', 'most_engaging_type']
-    search_fields = ['user__username']
+    list_filter = ['created_at', 'updated_at']
+    search_fields = ['user__username', 'user__email']
     readonly_fields = [
-        'total_notifications_received', 'total_notifications_opened', 
-        'total_notifications_clicked', 'open_rate', 'click_rate',
-        'engagement_level', 'created_at', 'updated_at'
+        'total_sent', 'total_delivered', 'total_read', 'total_clicked', 'total_failed',
+        'delivery_rate', 'read_rate', 'click_rate', 'engagement_score',
+        'stats_by_type', 'best_engagement_hour', 'avg_time_to_read',
+        'created_at', 'updated_at'
     ]
     
     fieldsets = (
@@ -172,31 +179,45 @@ class UserNotificationStatsAdmin(admin.ModelAdmin):
         }),
         ('Contadores Gerais', {
             'fields': (
-                'total_notifications_received', 'total_notifications_opened', 
-                'total_notifications_clicked'
+                'total_sent', 'total_delivered', 'total_read', 
+                'total_clicked', 'total_failed'
             )
         }),
-        ('Contadores por Tipo', {
-            'fields': (
-                'workout_reminders_sent', 'achievements_sent', 'motivational_sent'
-            )
+        ('Taxas Calculadas', {
+            'fields': ('delivery_rate', 'read_rate', 'click_rate', 'engagement_score')
         }),
-        ('Métricas de Engajamento', {
-            'fields': (
-                'open_rate', 'click_rate', 'engagement_level',
-                'last_notification_opened', 'last_notification_clicked'
-            )
+        ('Estatísticas por Tipo', {
+            'fields': ('stats_by_type',),
+            'classes': ('collapse',)
         }),
-        ('Preferências Implícitas', {
+        ('Padrões Comportamentais', {
             'fields': (
-                'best_time_to_notify', 'most_engaging_type', 'least_engaging_type'
+                'best_engagement_hour', 'avg_time_to_read', 
+                'last_interaction', 'preferred_frequency'
             ),
+            'classes': ('collapse',)
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'updated_at'),
             'classes': ('collapse',)
         })
     )
     
-    def open_rate_display(self, obj):
-        rate = obj.open_rate
+    def delivery_rate_display(self, obj):
+        rate = obj.delivery_rate * 100
+        if rate >= 90:
+            color = 'green'
+        elif rate >= 70:
+            color = 'orange'
+        else:
+            color = 'red'
+        return format_html(
+            '<span style="color: {};">{:.1f}%</span>', color, rate
+        )
+    delivery_rate_display.short_description = 'Taxa Entrega'
+    
+    def read_rate_display(self, obj):
+        rate = obj.read_rate * 100
         if rate >= 50:
             color = 'green'
         elif rate >= 25:
@@ -206,53 +227,30 @@ class UserNotificationStatsAdmin(admin.ModelAdmin):
         return format_html(
             '<span style="color: {};">{:.1f}%</span>', color, rate
         )
-    open_rate_display.short_description = 'Taxa Abertura'
+    read_rate_display.short_description = 'Taxa Leitura'
     
-    def click_rate_display(self, obj):
-        rate = obj.click_rate
-        if rate >= 15:
+    def engagement_score_display(self, obj):
+        score = obj.engagement_score * 100
+        if score >= 70:
             color = 'green'
-        elif rate >= 5:
+        elif score >= 40:
             color = 'orange'
         else:
             color = 'red'
         return format_html(
-            '<span style="color: {};">{:.1f}%</span>', color, rate
+            '<span style="color: {};">{:.1f}%</span>', color, score
         )
-    click_rate_display.short_description = 'Taxa Clique'
+    engagement_score_display.short_description = 'Score Engajamento'
     
     def get_queryset(self, request):
         return super().get_queryset(request).select_related('user')
+    
+    def has_add_permission(self, request):
+        # Stats são criadas automaticamente, não manualmente
+        return False
 
 
 # Configurações do admin site
-admin.site.site_header = "FitAI - Administração"
+admin.site.site_header = "FitAI - Sistema de Notificações"
 admin.site.site_title = "FitAI Admin"
-admin.site.index_title = "Sistema de Administração FitAI"
-
-
-# =====================================
-# ATUALIZAÇÃO NECESSÁRIA NO settings.py
-# =====================================
-"""
-Adicionar no INSTALLED_APPS:
-
-INSTALLED_APPS = [
-    'django.contrib.admin',
-    'django.contrib.auth',
-    'django.contrib.contenttypes',
-    'django.contrib.sessions',
-    'django.contrib.messages',
-    'django.contrib.staticfiles',
-    # Novos apps que instalamos
-    'rest_framework',
-    'corsheaders',
-    # Nossos apps
-    'apps.users',
-    'apps.exercises',
-    'apps.workouts',
-    'apps.recommendations',
-    'apps.notifications',  # ← ADICIONAR ESTA LINHA
-    'apps.core',
-]
-"""
+admin.site.index_title = "Administração de Notificações"
