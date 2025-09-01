@@ -1,0 +1,30 @@
+from django.urls import path
+from . import views
+
+urlpatterns = [
+    # API básica
+    path('workouts/test/', views.test_workouts_api, name='test_workouts_api'),
+    
+    # APIs de workouts
+    path('workouts/', views.list_workouts, name='list_workouts'),
+    path('workouts/recommended/', views.recommended_workouts, name='recommended_workouts'),
+    path('workouts/<int:workout_id>/', views.workout_detail, name='workout_detail'),
+    
+    # APIs de sessões
+    path('workouts/<int:workout_id>/start/', views.start_workout_session, name='start_workout_session'),
+    path('sessions/current/', views.current_session_status, name='current_session_status'),
+    path('sessions/history/', views.workout_history, name='workout_history'),
+    
+    # APIs de controle de sessão em tempo real
+    path('exercises/<int:exercise_log_id>/update/', views.update_exercise_progress, name='update_exercise_progress'),
+    path('exercises/<int:exercise_log_id>/complete/', views.complete_exercise, name='complete_exercise'),
+    path('exercises/<int:exercise_log_id>/skip/', views.skip_exercise, name='skip_exercise'),
+    path('sessions/pause/', views.pause_session, name='pause_session'),
+    path('sessions/complete/', views.complete_workout_session, name='complete_workout_session'),
+    path('sessions/cancel/', views.cancel_session, name='cancel_session'),
+    
+    # APIs finais de IA e Analytics (NOVAS)
+    path('analytics/', views.user_analytics, name='user_analytics'),
+    path('ai/exercise-recommendations/', views.ai_exercise_recommendations, name='ai_exercise_recommendations'),
+    path('ai/generate-workout/', views.generate_ai_workout_plan, name='generate_ai_workout_plan'),
+]
