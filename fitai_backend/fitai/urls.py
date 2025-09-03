@@ -14,6 +14,7 @@ urlpatterns = [
     path('api/v1/', include('apps.workouts.urls')),
     path('api/v1/recommendations/', include('apps.recommendations.urls')),
     path('api/v1/notifications/', include('apps.notifications.urls')),
+    path('api/v1/chat/', include('apps.chatbot.urls')),
     
     # Token de autenticação (alternativa ao login customizado)
     path('api-token-auth/', obtain_auth_token),

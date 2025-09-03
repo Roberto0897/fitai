@@ -1,4 +1,4 @@
-# settings/base.py - CONFIGURAÇÕES COMPLETAS CORRIGIDAS
+# fitai/settings/base.py - CONFIGURAÇÕES COMPLETAS COM CHATBOT INTEGRADO
 
 # Importações necessárias
 import os
@@ -39,6 +39,7 @@ LOCAL_APPS = [
     'apps.recommendations',
     'apps.notifications', 
     'apps.core',
+    'apps.chatbot',  # 👈 CHATBOT INTEGRADO
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -131,6 +132,10 @@ REST_FRAMEWORK = {
     'DEFAULT_RENDERER_CLASSES': [
         'rest_framework.renderers.JSONRenderer',
     ],
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.UserRateThrottle',
+        'rest_framework.throttling.AnonRateThrottle'
+    ],
 }
 
 # CORS settings para Flutter
@@ -207,10 +212,12 @@ CACHE_TIMEOUTS = {
     'ai_rate_limits': 3600,         # 1 hora
     'ai_metrics_daily': 86400,      # 24 horas
     'ai_quality_scores': 7200,      # 2 horas
+    'chatbot_context': 3600,        # 1 hora - contexto do chatbot
+    'chatbot_analytics': 1800,      # 30 minutos - analytics do chat
 }
 
 # =============================================================================
-# 🔐 LOGGING CONFIGURATION (MELHORADA)
+# 🔐 LOGGING CONFIGURATION (MELHORADA COM CHATBOT)
 # =============================================================================
 
 LOGGING = {
@@ -229,6 +236,10 @@ LOGGING = {
             'format': '[AI] {asctime} {levelname} {module}: {message}',
             'style': '{',
         },
+        'chat_formatter': {
+            'format': '[CHAT] {asctime} {levelname} {module}: {message}',
+            'style': '{',
+        },
     },
     'handlers': {
         'console': {
@@ -241,6 +252,27 @@ LOGGING = {
             'maxBytes': 1024*1024*5,  # 5 MB
             'backupCount': 5,
             'formatter': 'ai_formatter',
+        },
+        'notification_file': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': BASE_DIR / 'logs' / 'notifications.log',
+            'maxBytes': 1024*1024*5,  # 5 MB
+            'backupCount': 5,
+            'formatter': 'verbose',
+        },
+        'chatbot_file': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': BASE_DIR / 'logs' / 'chatbot.log',
+            'maxBytes': 1024*1024*5,  # 5 MB
+            'backupCount': 5,
+            'formatter': 'verbose',
+        },
+        'chat_ai_file': {
+            'class': 'logging.handlers.RotatingFileHandler',
+            'filename': BASE_DIR / 'logs' / 'chatbot_ai.log',
+            'maxBytes': 1024*1024*3,  # 3 MB
+            'backupCount': 3,
+            'formatter': 'chat_formatter',
         },
     },
     'loggers': {
@@ -255,7 +287,27 @@ LOGGING = {
         },
         'apps.recommendations': {
             'handlers': ['console'],
-            'level': 'DEBUG' if config('DEBUG', default=False, cast=bool) else 'INFO',
+            'level': 'DEBUG' if DEBUG else 'INFO',
+            'propagate': False,
+        },
+        'apps.notifications': {
+            'handlers': ['console', 'notification_file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'apps.notifications.services.notification_service': {
+            'handlers': ['console', 'notification_file'], 
+            'level': 'DEBUG' if DEBUG else 'INFO',
+            'propagate': False,
+        },
+        'apps.chatbot': {
+            'handlers': ['console', 'chatbot_file'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'apps.chatbot.services.chat_service': {
+            'handlers': ['console', 'chatbot_file', 'chat_ai_file'],
+            'level': 'DEBUG' if DEBUG else 'INFO',
             'propagate': False,
         },
     },
@@ -283,6 +335,7 @@ CELERY_ENABLE_UTC = True
 CELERY_ROUTES = {
     'apps.recommendations.tasks.generate_ai_recommendations': {'queue': 'ai_tasks'},
     'apps.recommendations.tasks.analyze_user_progress': {'queue': 'ai_tasks'},
+    'apps.chatbot.tasks.process_chat_message': {'queue': 'chat_tasks'},  # Futuras tarefas assíncronas de chat
 }
 
 # =============================================================================
@@ -327,194 +380,129 @@ RECOMMENDATION_CONFIG = {
 }
 
 # =============================================================================
-# 🚨 MONITORAMENTO E ALERTAS
+# 🚦 RATE LIMITING CONFIGURATION
 # =============================================================================
 
-# Configurações de monitoramento
-AI_MONITORING = {
-    'enable_performance_tracking': True,
-    'enable_error_tracking': True,
-    'enable_usage_tracking': True,
-    'alert_on_high_error_rate': True,
-    'alert_threshold_errors_per_hour': 10,
-    'alert_threshold_response_time_ms': 5000,
-}
-
-# Webhooks para alertas (opcional)
-AI_ALERT_WEBHOOKS = {
-    'slack_webhook': config('SLACK_WEBHOOK_URL', default=''),
-    'email_alerts': config('AI_ALERT_EMAILS', default='').split(','),
-    'enable_webhooks': config('ENABLE_AI_ALERTS', default=False, cast=bool),
-}
-
-# =============================================================================
-# 🔒 SEGURANÇA ESPECÍFICA PARA IA
-# =============================================================================
-
-# Rate limiting para endpoints de IA
-AI_RATE_LIMITS = {
-    'generate_workout': '10/hour',
-    'analyze_progress': '20/hour',
-    'motivational_message': '30/hour',
-    'personalized_recommendations': '50/hour',
-}
-
-# Validação de entrada para IA
-AI_INPUT_VALIDATION = {
-    'max_prompt_length': 2000,
-    'allowed_contexts': ['workout_start', 'workout_complete', 'weekly_review', 'goal_reminder'],
-    'sanitize_user_input': True,
-    'block_suspicious_prompts': True,
-}
-
-# =============================================================================
-# 📈 MÉTRICAS E ANALYTICS
-# =============================================================================
-
-# Configurações de métricas
-METRICS_CONFIG = {
-    'track_ai_usage': True,
-    'track_recommendation_acceptance': True,
-    'track_workout_completion': True,
-    'track_user_engagement': True,
-    'retention_days': 90,  # Manter métricas por 90 dias
-}
-
-# Configurações de analytics
-ANALYTICS_CONFIG = {
-    'enable_user_journey_tracking': True,
-    'enable_ab_testing': False,  # Para futuras implementações
-    'enable_cohort_analysis': True,
-    'daily_reports': True,
-}
-
-# =============================================================================
-# 🌍 CONFIGURAÇÕES ESPECÍFICAS DO BRASIL
-# =============================================================================
-
-# Localização brasileira
-USE_L10N = True
-USE_TZ = True
-TIME_ZONE = 'America/Sao_Paulo'
-LANGUAGE_CODE = 'pt-br'
-
-# Formatação brasileira
-DATE_FORMAT = 'd/m/Y'
-TIME_FORMAT = 'H:i'
-DATETIME_FORMAT = 'd/m/Y H:i'
-
-# Moeda brasileira para futuros recursos premium
-CURRENCY_CODE = 'BRL'
-CURRENCY_SYMBOL = 'R$'
-
-# =============================================================================
-# 🔧 CONFIGURAÇÕES PARA DIFERENTES AMBIENTES
-# =============================================================================
-
-# Configurações que podem variar por ambiente
-if config('ENVIRONMENT', default='development') == 'production':
-    # Produção: mais restritivo
-    AI_RATE_LIMIT_PER_HOUR = 30
-    OPENAI_MAX_TOKENS = 600
-    AI_CACHE_TIMEOUT = 7200  # 2 horas
-    
-elif config('ENVIRONMENT', default='development') == 'staging':
-    # Staging: configurações intermediárias
-    AI_RATE_LIMIT_PER_HOUR = 40
-    OPENAI_MAX_TOKENS = 700
-    
-else:
-    # Desenvolvimento: mais permissivo
-    AI_RATE_LIMIT_PER_HOUR = 100
-    OPENAI_MAX_TOKENS = 1000
-    AI_ENABLE_METRICS = True
-
-# =============================================================================
-# ✅ VALIDAÇÕES DE CONFIGURAÇÃO
-# =============================================================================
-
-# Validar configurações críticas
-def validate_ai_configuration():
-    """Valida configurações de IA no startup"""
-    errors = []
-    
-    if AI_FEATURES_ENABLED and not OPENAI_API_KEY:
-        errors.append("OPENAI_API_KEY é obrigatória quando AI_FEATURES_ENABLED=True")
-    
-    if OPENAI_MAX_TOKENS > 4000:
-        errors.append("OPENAI_MAX_TOKENS não pode exceder 4000")
-    
-    if not (0.0 <= OPENAI_TEMPERATURE <= 2.0):
-        errors.append("OPENAI_TEMPERATURE deve estar entre 0.0 e 2.0")
-    
-    if errors:
-        import sys
-        print("❌ ERROS DE CONFIGURAÇÃO DE IA:")
-        for error in errors:
-            print(f"  • {error}")
-        if config('STRICT_VALIDATION', default=False, cast=bool):
-            sys.exit(1)
-    else:
-        print("Configurações de IA validadas com sucesso")
-
-# Executar validação se não estiver em testes
-import sys
-if 'test' not in sys.argv and 'migrate' not in sys.argv:
-    validate_ai_configuration()
-
-# =============================================================================
-# 📝 EXEMPLO DE ARQUIVO .env PARA REFERÊNCIA
-# =============================================================================
-
-"""
-# Adicione estas variáveis ao seu arquivo .env:
-
-# OpenAI Configuration
-OPENAI_API_KEY=sk-sua_chave_openai_aqui
-OPENAI_MODEL=gpt-3.5-turbo
-OPENAI_MAX_TOKENS=800
-OPENAI_TEMPERATURE=0.7
-
-# Environment
-ENVIRONMENT=development  # development, staging, production
-
-# Cache & Performance
-REDIS_URL=redis://127.0.0.1:6379/1
-CELERY_BROKER_URL=redis://localhost:6379/2
-
-# Rate Limiting
-OPENAI_RATE_LIMIT_PER_HOUR=50
-
-# Monitoring (opcional)
-SLACK_WEBHOOK_URL=https://hooks.slack.com/...
-ENABLE_AI_ALERTS=False
-AI_ALERT_EMAILS=admin@fitai.com,dev@fitai.com
-
-# Security
-STRICT_VALIDATION=False
-"""
-
-# =============================================================================
-# 🚦 RATE LIMITING CONFIGURATION - ADICIONAR AO settings/base.py
-# =============================================================================
-
-# Rate limiting para APIs de notificações
+# Rate limiting para APIs gerais
 REST_FRAMEWORK_THROTTLE_RATES = {
     'notifications': '100/hour',         # APIs básicas de notificações
     'ai_notifications': '20/hour',       # APIs que usam IA
     'notification_stats': '50/hour',     # APIs de estatísticas
     'user': '1000/hour',                 # Limite geral por usuário
     'anon': '100/hour',                  # Usuários anônimos
+    
+    # Rate limits específicos do chatbot
+    'chatbot_start': '10/hour',          # Iniciar conversas
+    'chatbot_message': '30/hour',        # Enviar mensagens
+    'chatbot_history': '50/hour',        # Ver histórico
+    'chatbot_analytics': '10/hour',      # Analytics do chat
 }
 
-# Adicionar ao REST_FRAMEWORK existente
+# Atualizar REST_FRAMEWORK com throttling
 REST_FRAMEWORK.update({
-    'DEFAULT_THROTTLE_CLASSES': [
-        'rest_framework.throttling.UserRateThrottle',
-        'rest_framework.throttling.AnonRateThrottle'
-    ],
     'DEFAULT_THROTTLE_RATES': REST_FRAMEWORK_THROTTLE_RATES
 })
+
+# =============================================================================
+# 💬 CONFIGURAÇÕES ESPECÍFICAS DO CHATBOT
+# =============================================================================
+
+# Configurações do sistema de chatbot
+CHATBOT_SETTINGS = {
+    'MAX_CONVERSATIONS_PER_USER': config('CHATBOT_MAX_CONVERSATIONS_PER_USER', default=10, cast=int),
+    'MESSAGE_MAX_LENGTH': config('CHATBOT_MESSAGE_MAX_LENGTH', default=500, cast=int),
+    'CONVERSATION_TIMEOUT_HOURS': config('CHATBOT_CONVERSATION_TIMEOUT_HOURS', default=24, cast=int),
+    'MAX_CONTEXT_MESSAGES': config('CHATBOT_MAX_CONTEXT_MESSAGES', default=10, cast=int),
+    'ENABLE_ANALYTICS': config('CHATBOT_ENABLE_ANALYTICS', default=True, cast=bool),
+    'ENABLE_INTENT_DETECTION': True,
+    'FALLBACK_TO_RULES': True,
+    'AUTO_CLEANUP_DAYS': 30,  # Limpar conversas antigas automaticamente
+}
+
+# Rate limiting específico para chatbot (mais detalhado)
+CHATBOT_RATE_LIMITS = {
+    'start_conversation': '10/hour',       # Criar conversas
+    'send_message': '30/hour',             # Enviar mensagens
+    'conversation_history': '50/hour',     # Ver histórico
+    'user_conversations': '20/hour',       # Listar conversas
+    'end_conversation': '20/hour',         # Finalizar conversas
+    'message_feedback': '40/hour',         # Dar feedback
+    'chat_analytics': '10/hour',           # Ver analytics
+    
+    # Limites diários
+    'daily_messages': '200/day',           # Mensagens por dia
+    'daily_conversations': '50/day',       # Conversas por dia
+}
+
+# Tipos de conversa suportados
+CHATBOT_CONVERSATION_TYPES = [
+    ('workout_consultation', 'Consultoria de Treino'),
+    ('technique_guidance', 'Orientação Técnica'),
+    ('progress_analysis', 'Análise de Progresso'),
+    ('motivation_chat', 'Chat Motivacional'),
+    ('nutrition_advice', 'Orientação Nutricional'),
+    ('general_fitness', 'Fitness Geral'),
+]
+
+# Configurações de qualidade das respostas
+CHATBOT_QUALITY_SETTINGS = {
+    'MIN_CONFIDENCE_SCORE': 0.6,
+    'ENABLE_RESPONSE_VALIDATION': True,
+    'MAX_RESPONSE_TIME_MS': 30000,  # 30 segundos
+    'ENABLE_CONTENT_FILTERING': True,
+    'LOG_LOW_CONFIDENCE_RESPONSES': True,
+    'REQUIRE_USER_PROFILE_FOR_PERSONALIZATION': False,  # Funciona sem perfil completo
+}
+
+# Configurações de contexto e personalização
+CHATBOT_CONTEXT_SETTINGS = {
+    'ENABLE_USER_CONTEXT': True,
+    'ENABLE_WORKOUT_HISTORY_CONTEXT': True,
+    'ENABLE_PREFERENCE_LEARNING': True,
+    'CONTEXT_RELEVANCE_THRESHOLD': 0.5,
+    'MAX_CONTEXT_AGE_HOURS': 72,  # 3 dias
+    'AUTO_UPDATE_USER_PREFERENCES': True,
+}
+
+# Prompts especializados por tipo de conversa
+CHATBOT_SPECIALIZED_PROMPTS = {
+    'workout_consultation': {
+        'system_focus': 'Especialista em prescrição de exercícios baseada em evidência científica',
+        'response_style': 'Técnico mas acessível, sempre priorizando segurança',
+        'safety_emphasis': 'Alto',
+        'max_tokens': 600,
+    },
+    'technique_guidance': {
+        'system_focus': 'Instrutor técnico especialista em biomecânica e execução correta',
+        'response_style': 'Detalhado com instruções passo-a-passo claras',
+        'safety_emphasis': 'Máximo',
+        'max_tokens': 700,
+    },
+    'progress_analysis': {
+        'system_focus': 'Analista de performance e dados fitness com visão holística',
+        'response_style': 'Analítico com insights motivadores e práticos',
+        'safety_emphasis': 'Médio',
+        'max_tokens': 500,
+    },
+    'motivation_chat': {
+        'system_focus': 'Coach motivacional e psicólogo esportivo empático',
+        'response_style': 'Encorajador, empático e genuinamente motivador',
+        'safety_emphasis': 'Alto - saúde mental',
+        'max_tokens': 400,
+    },
+    'nutrition_advice': {
+        'system_focus': 'Orientações gerais, sempre recomendar nutricionista para especificidades',
+        'response_style': 'Informativo com disclaimers apropriados',
+        'safety_emphasis': 'Máximo - questões de saúde',
+        'max_tokens': 500,
+    },
+    'general_fitness': {
+        'system_focus': 'Personal trainer virtual completo e versátil',
+        'response_style': 'Adaptativo baseado na pergunta e contexto do usuário',
+        'safety_emphasis': 'Alto',
+        'max_tokens': 500,
+    }
+}
 
 # =============================================================================
 # 📊 CONFIGURAÇÕES DE NOTIFICAÇÕES
@@ -553,37 +541,220 @@ DEFAULT_NOTIFICATION_TEMPLATES = {
         'title': 'Seu progresso semanal, {{user_name}}',
         'message': 'Esta semana você treinou {{workouts_count}} vezes e queimou {{calories}} calorias!',
         'variables': ['user_name', 'workouts_count', 'calories', 'improvement_areas']
+    },
+    'chat_summary': {
+        'title': 'Resumo das suas conversas fitness, {{user_name}}',
+        'message': 'Esta semana você teve {{conversation_count}} conversas no chatbot. Continue explorando!',
+        'variables': ['user_name', 'conversation_count', 'favorite_topic', 'satisfaction_rating']
     }
 }
 
 # =============================================================================
-# 🔍 LOGGING ESPECÍFICO PARA NOTIFICAÇÕES - Adicionar ao LOGGING existente
+# 🚨 MONITORAMENTO E ALERTAS
 # =============================================================================
 
-# Adicionar estes handlers e loggers ao LOGGING existente
-NOTIFICATION_LOGGING_HANDLERS = {
-    'notification_file': {
-        'class': 'logging.handlers.RotatingFileHandler',
-        'filename': BASE_DIR / 'logs' / 'notifications.log',
-        'maxBytes': 1024*1024*5,  # 5 MB
-        'backupCount': 5,
-        'formatter': 'verbose',
-    },
+# Configurações de monitoramento
+AI_MONITORING = {
+    'enable_performance_tracking': True,
+    'enable_error_tracking': True,
+    'enable_usage_tracking': True,
+    'alert_on_high_error_rate': True,
+    'alert_threshold_errors_per_hour': 10,
+    'alert_threshold_response_time_ms': 5000,
 }
 
-NOTIFICATION_LOGGING_LOGGERS = {
-    'apps.notifications': {
-        'handlers': ['console', 'notification_file'],
-        'level': 'INFO',
-        'propagate': False,
-    },
-    'apps.notifications.services.notification_service': {
-        'handlers': ['console', 'notification_file'], 
-        'level': 'DEBUG' if DEBUG else 'INFO',
-        'propagate': False,
-    },
+# Monitoramento específico do chatbot
+CHATBOT_MONITORING = {
+    'enable_conversation_analytics': True,
+    'enable_quality_tracking': True,
+    'enable_user_satisfaction_tracking': True,
+    'alert_on_low_satisfaction': True,
+    'satisfaction_threshold': 3.0,  # Alertar se satisfação média cair abaixo de 3.0
+    'enable_intent_accuracy_tracking': True,
 }
 
-# Adicionar aos handlers e loggers existentes
-LOGGING['handlers'].update(NOTIFICATION_LOGGING_HANDLERS)
-LOGGING['loggers'].update(NOTIFICATION_LOGGING_LOGGERS)
+# Webhooks para alertas (opcional)
+AI_ALERT_WEBHOOKS = {
+    'slack_webhook': config('SLACK_WEBHOOK_URL', default=''),
+    'email_alerts': config('AI_ALERT_EMAILS', default='').split(','),
+    'enable_webhooks': config('ENABLE_AI_ALERTS', default=False, cast=bool),
+}
+
+# =============================================================================
+# 🔒 SEGURANÇA ESPECÍFICA PARA IA E CHATBOT
+# =============================================================================
+
+# Rate limiting para endpoints de IA
+AI_RATE_LIMITS = {
+    'generate_workout': '10/hour',
+    'analyze_progress': '20/hour',
+    'motivational_message': '30/hour',
+    'personalized_recommendations': '50/hour',
+}
+
+# Validação de entrada para IA
+AI_INPUT_VALIDATION = {
+    'max_prompt_length': 2000,
+    'allowed_contexts': ['workout_start', 'workout_complete', 'weekly_review', 'goal_reminder'],
+    'sanitize_user_input': True,
+    'block_suspicious_prompts': True,
+}
+
+# Validações específicas do chatbot
+CHATBOT_INPUT_VALIDATION = {
+    'max_message_length': 500,
+    'min_message_length': 1,
+    'blocked_patterns': [
+        r'<script.*?>.*?</script>',  # Scripts maliciosos
+        r'javascript:',  # JavaScript URLs
+        r'on\w+\s*=',   # Event handlers
+    ],
+    'sanitize_html': True,
+    'rate_limit_duplicate_messages': True,
+}
+
+# =============================================================================
+# 📈 MÉTRICAS E ANALYTICS
+# =============================================================================
+
+# Configurações de métricas
+METRICS_CONFIG = {
+    'track_ai_usage': True,
+    'track_recommendation_acceptance': True,
+    'track_workout_completion': True,
+    'track_user_engagement': True,
+    'track_chatbot_usage': True,  # Nova métrica para chatbot
+    'retention_days': 90,  # Manter métricas por 90 dias
+}
+
+# Configurações de analytics
+ANALYTICS_CONFIG = {
+    'enable_user_journey_tracking': True,
+    'enable_ab_testing': False,  # Para futuras implementações
+    'enable_cohort_analysis': True,
+    'enable_chatbot_conversation_analytics': True,  # Analytics específico do chat
+    'daily_reports': True,
+}
+
+# =============================================================================
+# 🌍 CONFIGURAÇÕES ESPECÍFICAS DO BRASIL
+# =============================================================================
+
+# Localização brasileira
+USE_L10N = True
+USE_TZ = True
+TIME_ZONE = 'America/Sao_Paulo'
+LANGUAGE_CODE = 'pt-br'
+
+# Formatação brasileira
+DATE_FORMAT = 'd/m/Y'
+TIME_FORMAT = 'H:i'
+DATETIME_FORMAT = 'd/m/Y H:i'
+
+# Moeda brasileira para futuros recursos premium
+CURRENCY_CODE = 'BRL'
+CURRENCY_SYMBOL = 'R$'
+
+# =============================================================================
+# 🔧 CONFIGURAÇÕES PARA DIFERENTES AMBIENTES
+# =============================================================================
+
+# Configurações que podem variar por ambiente
+if config('ENVIRONMENT', default='development') == 'production':
+    # Produção: mais restritivo
+    AI_RATE_LIMIT_PER_HOUR = 30
+    OPENAI_MAX_TOKENS = 600
+    AI_CACHE_TIMEOUT = 7200  # 2 horas
+    CHATBOT_SETTINGS['MAX_CONVERSATIONS_PER_USER'] = 5
+    CHATBOT_RATE_LIMITS['send_message'] = '20/hour'
+    
+elif config('ENVIRONMENT', default='development') == 'staging':
+    # Staging: configurações intermediárias
+    AI_RATE_LIMIT_PER_HOUR = 40
+    OPENAI_MAX_TOKENS = 700
+    CHATBOT_SETTINGS['MAX_CONVERSATIONS_PER_USER'] = 8
+    
+else:
+    # Desenvolvimento: mais permissivo
+    AI_RATE_LIMIT_PER_HOUR = 100
+    OPENAI_MAX_TOKENS = 1000
+    AI_ENABLE_METRICS = True
+    CHATBOT_SETTINGS['MAX_CONVERSATIONS_PER_USER'] = 15
+
+# =============================================================================
+# ✅ VALIDAÇÕES DE CONFIGURAÇÃO
+# =============================================================================
+
+# Validar configurações críticas
+def validate_ai_configuration():
+    """Valida configurações de IA no startup"""
+    errors = []
+    
+    if AI_FEATURES_ENABLED and not OPENAI_API_KEY:
+        errors.append("OPENAI_API_KEY é obrigatória quando AI_FEATURES_ENABLED=True")
+    
+    if OPENAI_MAX_TOKENS > 4000:
+        errors.append("OPENAI_MAX_TOKENS não pode exceder 4000")
+    
+    if not (0.0 <= OPENAI_TEMPERATURE <= 2.0):
+        errors.append("OPENAI_TEMPERATURE deve estar entre 0.0 e 2.0")
+    
+    # Validações específicas do chatbot
+    if CHATBOT_SETTINGS['MESSAGE_MAX_LENGTH'] > 1000:
+        errors.append("CHATBOT_MESSAGE_MAX_LENGTH não pode exceder 1000 caracteres")
+    
+    if CHATBOT_SETTINGS['MAX_CONVERSATIONS_PER_USER'] > 50:
+        errors.append("MAX_CONVERSATIONS_PER_USER não pode exceder 50")
+    
+    if errors:
+        import sys
+        print("❌ ERROS DE CONFIGURAÇÃO:")
+        for error in errors:
+            print(f"  • {error}")
+        if config('STRICT_VALIDATION', default=False, cast=bool):
+            sys.exit(1)
+    else:
+        print("✅ Configurações validadas com sucesso (IA + Chatbot)")
+
+# Executar validação se não estiver em testes
+import sys
+if 'test' not in sys.argv and 'migrate' not in sys.argv:
+    validate_ai_configuration()
+
+# =============================================================================
+# 📝 EXEMPLO DE ARQUIVO .env PARA REFERÊNCIA
+# =============================================================================
+
+"""
+# Adicione estas variáveis ao seu arquivo .env:
+
+# OpenAI Configuration
+OPENAI_API_KEY=sk-sua_chave_openai_aqui
+OPENAI_MODEL=gpt-3.5-turbo
+OPENAI_MAX_TOKENS=800
+OPENAI_TEMPERATURE=0.7
+
+# Environment
+ENVIRONMENT=development  # development, staging, production
+
+# Cache & Performance
+REDIS_URL=redis://127.0.0.1:6379/1
+CELERY_BROKER_URL=redis://localhost:6379/2
+
+# Rate Limiting
+OPENAI_RATE_LIMIT_PER_HOUR=50
+
+# Chatbot Configuration
+CHATBOT_MAX_CONVERSATIONS_PER_USER=10
+CHATBOT_MESSAGE_MAX_LENGTH=500
+CHATBOT_CONVERSATION_TIMEOUT_HOURS=24
+CHATBOT_ENABLE_ANALYTICS=True
+
+# Monitoring (opcional)
+SLACK_WEBHOOK_URL=https://hooks.slack.com/...
+ENABLE_AI_ALERTS=False
+AI_ALERT_EMAILS=admin@fitai.com,dev@fitai.com
+
+# Security
+STRICT_VALIDATION=False
+"""
