@@ -2,26 +2,35 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'core/theme/app_theme.dart';
 import 'core/injection/injection.dart';
+import 'core/router/app_router.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
+  // Configuração da orientação da tela
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
   
+  // Configuração da status bar
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
     statusBarIconBrightness: Brightness.light,
+    systemNavigationBarColor: AppColors.background,
+    systemNavigationBarIconBrightness: Brightness.light,
   ));
   
+  // Inicialização do sistema de injeção de dependências
   try {
     await Injection.init();
-    debugPrint('Dependências inicializadas com sucesso');
+    debugPrint('✅ FITAI: Dependências inicializadas com sucesso');
   } catch (e) {
-    debugPrint('Erro ao inicializar dependências: $e');
+    debugPrint('❌ FITAI: Erro ao inicializar dependências: $e');
   }
+  
+  // Log de inicialização
+  debugPrint('🚀 FITAI: Aplicativo iniciando...');
   
   runApp(const FitAIApp());
 }
@@ -31,53 +40,15 @@ class FitAIApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'FitAI',
+    return MaterialApp.router(
+      title: 'FITAI - Personal Trainer Inteligente',
       debugShowCheckedModeBanner: false,
+      
+      // Tema da aplicação
       theme: AppTheme.darkTheme,
-      home: const TestHomePage(),
-    );
-  }
-}
-
-class TestHomePage extends StatelessWidget {
-  const TestHomePage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('FitAI - Teste'),
-      ),
-      body: const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.fitness_center,
-              size: 100,
-              color: AppColors.primary,
-            ),
-            SizedBox(height: 20),
-            Text(
-              'FitAI Configurado!',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: AppColors.textPrimary,
-              ),
-            ),
-            SizedBox(height: 10),
-            Text(
-              'Sistema funcionando corretamente',
-              style: TextStyle(
-                fontSize: 16,
-                color: AppColors.textSecondary,
-              ),
-            ),
-          ],
-        ),
-      ),
+      
+      // Sistema de roteamento
+      routerConfig: AppRouter.router,
     );
   }
 }
