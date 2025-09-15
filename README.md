@@ -253,10 +253,9 @@ POST /api/v1/recommendations/ai/generate-workout/ # Gerar treino com IA
 
 ## 👨‍💻 Autor
 
-**[Seu Nome]**  
-📧 seu.email@universidade.edu.br  
-🎓 Curso de [Seu Curso] - [Sua Universidade]  
-📅 TCC 2024/2025
+Maycon Douglas e Antonio Roberto 
+🎓 Tecnologia em Sistemas para internet
+📅 TCC 2025
 
 ---
 
@@ -268,9 +267,7 @@ Este projeto é desenvolvido para fins acadêmicos como parte do Trabalho de Con
 
 ## 🤝 Orientação
 
-**Orientador:** [Nome do Orientador]  
-**Instituição:** [Nome da Universidade]  
-**Área:** Inteligência Artificial aplicada à Saúde e Fitness
+**Orientador:** Francisco Euder
 
 ---
 
