@@ -3,10 +3,28 @@ import 'package:flutter/services.dart';
 import 'core/theme/app_theme.dart';
 import 'core/injection/injection.dart';
 import 'core/router/app_router.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'firebase_options.dart'; // Importa o arquivo gerado pelo flutterfire configure
+
 
 void main() async {
+  // 1. Garante que o Flutter esteja inicializado.
+  // Isso é essencial antes de chamar qualquer função nativa/externa, como o Firebase.
   WidgetsFlutterBinding.ensureInitialized();
   
+  // 2. Inicializa o Firebase.
+  // 'DefaultFirebaseOptions.currentPlatform' garante que ele use as configurações corretas (Android, iOS, Web, etc.).
+
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+  
+  FirebaseFirestore.instance.settings = const Settings(
+  persistenceEnabled: true,
+  cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
+);
+
   // Configuração da orientação da tela
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
@@ -47,8 +65,10 @@ class FitAIApp extends StatelessWidget {
       // Tema da aplicação
       theme: AppTheme.darkTheme,
       
+      
       // Sistema de roteamento
       routerConfig: AppRouter.router,
     );
   }
 }
+

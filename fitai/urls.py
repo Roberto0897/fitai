@@ -23,6 +23,25 @@ urlpatterns = [
     path('api-auth/', include('rest_framework.urls')),
 ]
 
+ #### possivel melhoria , para evitar conflitos
+
+  # API v1 - Rotas específicas
+  #  path('api/v1/users/', include('apps.users.urls')),
+  #  path('api/v1/exercises/', include('apps.exercises.urls')),
+  #  path('api/v1/workouts/', include('apps.workouts.urls')),
+  #  path('api/v1/recommendations/', include('apps.recommendations.urls')),
+  #  path('api/v1/notifications/', include('apps.notifications.urls')),
+  #  path('api/v1/chat/', include('apps.chatbot.urls')),
+    
+    # ... Token e DRF API Auth permanecem iguais ...
+  #  path('api-token-auth/', obtain_auth_token),
+  #  path('api-auth/', include('rest_framework.urls')),
+
+
+
+
+
+
 # URLs resultantes:
 # 
 # 🔐 ADMIN:

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "907146506069",
+    "project_id": "fitaitcc",
+    "storage_bucket": "fitaitcc.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:907146506069:android:f8e5d3259bd1c79dfbc9dc",
+        "android_client_info": {
+          "package_name": "com.example.fitai_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyArjw0SUOgocjIHYAEZgDmJYXYWR51-JLE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
