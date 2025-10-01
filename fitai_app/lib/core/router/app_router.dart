@@ -8,6 +8,9 @@ import '../../presentation/pages/workouts/workouts_page.dart';
 import '../../presentation/pages/workouts/workout_detail_page.dart';
 import '../../presentation/pages/exercises/exercise_execution_page.dart';
 import '../../presentation/pages/register_page.dart';
+import '../../presentation/pages/reports/reports_page.dart';
+import '../../presentation/pages/chat/chat_bot_page.dart';
+import '../../presentation/pages/profile/profile_page.dart';
 import '../../service/user_service.dart';
 import 'dart:async'; // Para Timer 
 import 'package:flutter/foundation.dart'; // Para kDebugMode
@@ -21,6 +24,9 @@ class AppRoutes {
   static const String workoutDetail = '/workout-detail';
   static const String exerciseExecution = '/exercise-execution';
   static const String rest = '/rest';
+  static const String reports = '/reports';
+  static const String chatbot = '/chatbot';
+  static const String profile = '/profile';
 }
 
 /// Sistema de roteamento da aplicação FITAI - CORRIGIDO
@@ -142,12 +148,41 @@ class AppRouter {
         },
       ),
       
-    ],
+      GoRoute(
+        path: AppRoutes.reports,
+        name: 'reports',
+        builder: (context, state) {
+          debugPrint('📱 ROUTER: Construindo ReportsPage');
+          return const ReportsPage();
+        },
+      ),
+    
+       GoRoute(
+        path: AppRoutes.chatbot,
+        name: 'chatbot',
+        builder: (context, state) {
+          debugPrint('📱 ROUTER: Construindo ChatBotPage');
+          return const ChatBotPage();
+        },
+      ),
+
+        GoRoute(
+        path: AppRoutes.profile,
+        name: 'profile',
+        builder: (context, state) {
+          debugPrint('📱 ROUTER: Construindo ProfilePage');
+          return const ProfilePage();
+        },
+      ),
+
+    ], // adicione goRoute antes disso
     
     errorBuilder: (context, state) {
       debugPrint('❌ ROUTER: Erro de rota: ${state.error}');
       return const ErrorPage();
     },
+
+    
   );
 
   // 🔥 MÉTODOS DE NAVEGAÇÃO CORRIGIDOS
@@ -260,6 +295,32 @@ class AppRouter {
     debugPrint('❌ Erro ao navegar para Exercise Execution: $e');
   }
 }
+static void goToReports() {
+    try {
+      _router.go(AppRoutes.reports);
+      debugPrint('✅ Navegação para Reports realizada');
+    } catch (e) {
+      debugPrint('❌ Erro ao navegar para Reports: $e');
+    }
+  }
+
+    static void goToChatBot() {
+    try {
+      _router.push(AppRoutes.chatbot);
+      debugPrint('✅ Navegação para Chat Bot realizada');
+    } catch (e) {
+      debugPrint('❌ Erro ao navegar para Chat Bot: $e');
+    }
+  }
+
+  static void goToProfile() {
+    try {
+      _router.go(AppRoutes.profile);
+      debugPrint('✅ Navegação para Profile realizada');
+    } catch (e) {
+      debugPrint('❌ Erro ao navegar para Profile: $e');
+    }
+  }
 }
 
 // 🔥 AUTH NOTIFIER MELHORADO - Com debounce para evitar loops
