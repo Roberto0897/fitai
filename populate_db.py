@@ -1,347 +1,327 @@
 #!/usr/bin/env python
 """
 Script para popular o banco de dados FitAI com dados de exemplo
-IMPORTANTE: Execute este arquivo dentro da pasta fitai_backend (onde está o manage.py)
+Execute: python populate_db.py
 """
 
 import os
 import django
 
-# Configurar Django
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'fitai.settings')
 django.setup()
 
-from django.contrib.auth.models import User
-from apps.users.models import UserProfile
 from apps.exercises.models import Exercise
 from apps.workouts.models import Workout, WorkoutExercise
 
 def criar_exercicios():
     """Criar exercícios de exemplo"""
     exercicios = [
+        # PEITO
         {
-            'nome': 'Flexão de Braço',
-            'descricao': 'Exercício clássico para peito, ombros e tríceps',
-            'categoria': 'calistenia',
-            'grupo_muscular_primario': 'peito',
-            'grupos_musculares_secundarios': ['ombros', 'triceps'],
-            'equipamento_necessario': 'nenhum',
-            'nivel_dificuldade': 'iniciante',
-            'instrucoes_detalhadas': 'Posicione-se em prancha, mãos na largura dos ombros. Desça o peito até quase tocar o chão.',
-            'dicas_execucao': 'Mantenha o core contraído e o corpo em linha reta.',
-            'tempo_execucao': 30,
-            'calorias_por_minuto': 8.0,
-            'musculos_trabalhados': ['peito', 'ombros', 'triceps']
+            'name': 'Supino Reto',
+            'description': 'Exercício clássico para desenvolvimento do peitoral',
+            'muscle_group': 'chest',
+            'difficulty_level': 'intermediate',
+            'equipment_needed': 'Barra, Banco',
+            'instructions': 'Deite no banco, pegue a barra com pegada média, desça até o peito e empurre.',
+            'duration_minutes': 8,
         },
         {
-            'nome': 'Agachamento Livre',
-            'descricao': 'Rei dos exercícios para pernas e glúteos',
-            'categoria': 'musculacao',
-            'grupo_muscular_primario': 'quadriceps',
-            'grupos_musculares_secundarios': ['gluteos', 'posteriores'],
-            'equipamento_necessario': 'nenhum',
-            'nivel_dificuldade': 'iniciante',
-            'instrucoes_detalhadas': 'Pés na largura dos ombros, desça como se fosse sentar numa cadeira.',
-            'dicas_execucao': 'Joelhos alinhados com os pés. Peso nos calcanhares.',
-            'tempo_execucao': 35,
-            'calorias_por_minuto': 9.0,
-            'musculos_trabalhados': ['quadriceps', 'gluteos', 'posteriores']
+            'name': 'Flexão de Braço',
+            'description': 'Exercício básico para peito, ombros e tríceps',
+            'muscle_group': 'chest',
+            'difficulty_level': 'beginner',
+            'equipment_needed': 'Nenhum',
+            'instructions': 'Posição de prancha, mãos na largura dos ombros, desça até quase tocar o chão.',
+            'duration_minutes': 5,
+        },
+        
+        # COSTAS
+        {
+            'name': 'Remada Curvada',
+            'description': 'Fortalece toda a musculatura das costas',
+            'muscle_group': 'back',
+            'difficulty_level': 'intermediate',
+            'equipment_needed': 'Barra',
+            'instructions': 'Corpo inclinado, puxe a barra em direção ao abdômen.',
+            'duration_minutes': 7,
         },
         {
-            'nome': 'Prancha',
-            'descricao': 'Exercício isométrico para core',
-            'categoria': 'calistenia',
-            'grupo_muscular_primario': 'core',
-            'grupos_musculares_secundarios': ['ombros'],
-            'equipamento_necessario': 'nenhum',
-            'nivel_dificuldade': 'iniciante',
-            'instrucoes_detalhadas': 'Mantenha o corpo reto apoiado nos antebraços e pés.',
-            'dicas_execucao': 'Evite arqueamento das costas. Respiração normal.',
-            'tempo_execucao': 60,
-            'calorias_por_minuto': 4.0,
-            'musculos_trabalhados': ['core', 'ombros']
+            'name': 'Pull-ups',
+            'description': 'Exercício composto para costas e bíceps',
+            'muscle_group': 'back',
+            'difficulty_level': 'advanced',
+            'equipment_needed': 'Barra fixa',
+            'instructions': 'Puxe o corpo até o queixo passar a barra.',
+            'duration_minutes': 6,
+        },
+        
+        # PERNAS
+        {
+            'name': 'Agachamento Livre',
+            'description': 'Rei dos exercícios para pernas',
+            'muscle_group': 'legs',
+            'difficulty_level': 'intermediate',
+            'equipment_needed': 'Barra',
+            'instructions': 'Barra nas costas, desça até coxas paralelas ao chão.',
+            'duration_minutes': 10,
         },
         {
-            'nome': 'Burpee',
-            'descricao': 'Exercício completo que trabalha corpo todo',
-            'categoria': 'cardio',
-            'grupo_muscular_primario': 'corpo_todo',
-            'grupos_musculares_secundarios': ['peito', 'pernas'],
-            'equipamento_necessario': 'nenhum',
-            'nivel_dificuldade': 'avancado',
-            'instrucoes_detalhadas': 'Agache, apoie as mãos no chão, salte para prancha, flexão, volte e salte.',
-            'dicas_execucao': 'Movimento fluido. Respiração controlada.',
-            'tempo_execucao': 45,
-            'calorias_por_minuto': 12.0,
-            'musculos_trabalhados': ['corpo_todo']
+            'name': 'Leg Press',
+            'description': 'Fortalece quadríceps e glúteos',
+            'muscle_group': 'legs',
+            'difficulty_level': 'beginner',
+            'equipment_needed': 'Máquina de leg press',
+            'instructions': 'Empurre a plataforma com os pés.',
+            'duration_minutes': 8,
         },
         {
-            'nome': 'Jumping Jacks',
-            'descricao': 'Exercício cardio simples e efetivo',
-            'categoria': 'cardio',
-            'grupo_muscular_primario': 'corpo_todo',
-            'grupos_musculares_secundarios': ['pernas', 'ombros'],
-            'equipamento_necessario': 'nenhum',
-            'nivel_dificuldade': 'iniciante',
-            'instrucoes_detalhadas': 'Salte abrindo as pernas e levantando os braços acima da cabeça.',
-            'dicas_execucao': 'Aterrisse suavemente. Movimento rítmico.',
-            'tempo_execucao': 45,
-            'calorias_por_minuto': 8.0,
-            'musculos_trabalhados': ['corpo_todo', 'pernas']
+            'name': 'Agachamento Livre (Peso Corporal)',
+            'description': 'Versão sem peso do agachamento',
+            'muscle_group': 'legs',
+            'difficulty_level': 'beginner',
+            'equipment_needed': 'Nenhum',
+            'instructions': 'Pés na largura dos ombros, desça como se fosse sentar.',
+            'duration_minutes': 5,
+        },
+        
+        # OMBROS
+        {
+            'name': 'Desenvolvimento Militar',
+            'description': 'Desenvolvimento de ombros com barra',
+            'muscle_group': 'shoulders',
+            'difficulty_level': 'intermediate',
+            'equipment_needed': 'Barra',
+            'instructions': 'Empurre a barra acima da cabeça.',
+            'duration_minutes': 7,
+        },
+        
+        # BRAÇOS
+        {
+            'name': 'Rosca Direta',
+            'description': 'Fortalece o bíceps',
+            'muscle_group': 'arms',
+            'difficulty_level': 'beginner',
+            'equipment_needed': 'Halteres ou barra',
+            'instructions': 'Flexione os cotovelos levantando o peso.',
+            'duration_minutes': 5,
         },
         {
-            'nome': 'Abdominal Tradicional',
-            'descricao': 'Exercício básico para abdômen',
-            'categoria': 'calistenia',
-            'grupo_muscular_primario': 'abdomen',
-            'grupos_musculares_secundarios': ['core'],
-            'equipamento_necessario': 'nenhum',
-            'nivel_dificuldade': 'iniciante',
-            'instrucoes_detalhadas': 'Deitado, flexione o tronco em direção aos joelhos.',
-            'dicas_execucao': 'Não puxe o pescoço. Movimento suave.',
-            'tempo_execucao': 30,
-            'calorias_por_minuto': 6.0,
-            'musculos_trabalhados': ['abdomen', 'core']
+            'name': 'Tríceps Testa',
+            'description': 'Isolamento do tríceps',
+            'muscle_group': 'arms',
+            'difficulty_level': 'beginner',
+            'equipment_needed': 'Barra W',
+            'instructions': 'Deite, flexione apenas os cotovelos baixando a barra.',
+            'duration_minutes': 5,
+        },
+        
+        # CORE/ABS
+        {
+            'name': 'Prancha',
+            'description': 'Exercício isométrico para core',
+            'muscle_group': 'abs',
+            'difficulty_level': 'beginner',
+            'equipment_needed': 'Nenhum',
+            'instructions': 'Corpo reto apoiado nos antebraços e pés.',
+            'duration_minutes': 3,
         },
         {
-            'nome': 'Mountain Climber',
-            'descricao': 'Exercício cardio que fortalece core e pernas',
-            'categoria': 'calistenia',
-            'grupo_muscular_primario': 'core',
-            'grupos_musculares_secundarios': ['pernas', 'ombros'],
-            'equipamento_necessario': 'nenhum',
-            'nivel_dificuldade': 'intermediario',
-            'instrucoes_detalhadas': 'Em posição de prancha, alterne trazendo os joelhos em direção ao peito rapidamente.',
-            'dicas_execucao': 'Mantenha os quadris estáveis. Core sempre contraído.',
-            'tempo_execucao': 30,
-            'calorias_por_minuto': 10.0,
-            'musculos_trabalhados': ['core', 'pernas', 'ombros']
+            'name': 'Abdominal Tradicional',
+            'description': 'Exercício básico para abdômen',
+            'muscle_group': 'abs',
+            'difficulty_level': 'beginner',
+            'equipment_needed': 'Nenhum',
+            'instructions': 'Deitado, flexione o tronco em direção aos joelhos.',
+            'duration_minutes': 4,
+        },
+        
+        # CARDIO
+        {
+            'name': 'Corrida na Esteira',
+            'description': 'Cardio clássico',
+            'muscle_group': 'cardio',
+            'difficulty_level': 'beginner',
+            'equipment_needed': 'Esteira',
+            'instructions': 'Mantenha ritmo constante e respiração controlada.',
+            'duration_minutes': 15,
         },
         {
-            'nome': 'Glute Bridge',
-            'descricao': 'Ativa e fortalece os glúteos',
-            'categoria': 'calistenia',
-            'grupo_muscular_primario': 'gluteos',
-            'grupos_musculares_secundarios': ['posteriores'],
-            'equipamento_necessario': 'nenhum',
-            'nivel_dificuldade': 'iniciante',
-            'instrucoes_detalhadas': 'Deitado, eleve o quadril contraindo os glúteos.',
-            'dicas_execucao': 'Pausa no topo. Squeeze nos glúteos.',
-            'tempo_execucao': 30,
-            'calorias_por_minuto': 5.0,
-            'musculos_trabalhados': ['gluteos', 'posteriores', 'core']
-        }
+            'name': 'Burpee',
+            'description': 'Exercício completo corpo todo',
+            'muscle_group': 'cardio',
+            'difficulty_level': 'advanced',
+            'equipment_needed': 'Nenhum',
+            'instructions': 'Agache, apoie mãos, salte para prancha, flexão, volte e salte.',
+            'duration_minutes': 5,
+        },
+        {
+            'name': 'Jumping Jacks',
+            'description': 'Cardio simples e efetivo',
+            'muscle_group': 'cardio',
+            'difficulty_level': 'beginner',
+            'equipment_needed': 'Nenhum',
+            'instructions': 'Salte abrindo as pernas e levantando os braços.',
+            'duration_minutes': 5,
+        },
     ]
     
     for dados in exercicios:
         exercicio, created = Exercise.objects.get_or_create(
-            nome=dados['nome'],
+            name=dados['name'],
             defaults=dados
         )
         if created:
-            print(f"✅ Exercício criado: {exercicio.nome}")
+            print(f"✅ Exercício criado: {exercicio.name}")
         else:
-            print(f"⚠️  Exercício já existe: {exercicio.nome}")
-
-def criar_usuarios_teste():
-    """Criar usuários de exemplo"""
-    usuarios = [
-        {
-            'username': 'joao_silva',
-            'email': 'joao@teste.com',
-            'first_name': 'João',
-            'last_name': 'Silva',
-            'profile': {
-                'nome_completo': 'João Silva',
-                'idade': 25,
-                'sexo': 'M',
-                'peso_atual': 75.0,
-                'altura': 175.0,
-                'meta_principal': 'ganho_muscular',
-                'nivel_atividade': 'moderado',
-                'areas_foco': ['peito', 'bracos'],
-                'tipos_treino_preferidos': ['musculacao'],
-                'equipamentos_disponiveis': 'basicos',
-                'tempo_disponivel': 45,
-                'frequencia_semanal': 4,
-                'onboarding_completo': True
-            }
-        },
-        {
-            'username': 'maria_santos',
-            'email': 'maria@teste.com',
-            'first_name': 'Maria',
-            'last_name': 'Santos',
-            'profile': {
-                'nome_completo': 'Maria Santos',
-                'idade': 30,
-                'sexo': 'F',
-                'peso_atual': 60.0,
-                'altura': 165.0,
-                'meta_principal': 'bem_estar',
-                'nivel_atividade': 'ativo',
-                'areas_foco': ['corpo_todo'],
-                'tipos_treino_preferidos': ['cardio', 'calistenia'],
-                'equipamentos_disponiveis': 'sem_equipamentos',
-                'tempo_disponivel': 30,
-                'frequencia_semanal': 5,
-                'onboarding_completo': True
-            }
-        },
-        {
-            'username': 'ana_costa',
-            'email': 'ana@teste.com',
-            'first_name': 'Ana',
-            'last_name': 'Costa',
-            'profile': {
-                'nome_completo': 'Ana Costa',
-                'idade': 22,
-                'sexo': 'F',
-                'peso_atual': 55.0,
-                'altura': 160.0,
-                'meta_principal': 'emagrecimento',
-                'nivel_atividade': 'sedentario',
-                'areas_foco': ['abdomen', 'pernas'],
-                'tipos_treino_preferidos': ['cardio'],
-                'equipamentos_disponiveis': 'sem_equipamentos',
-                'tempo_disponivel': 30,
-                'frequencia_semanal': 3,
-                'onboarding_completo': True
-            }
-        }
-    ]
+            print(f"⏭️  Já existe: {exercicio.name}")
     
-    for dados_user in usuarios:
-        dados_profile = dados_user.pop('profile')
-        
-        user, created = User.objects.get_or_create(
-            username=dados_user['username'],
-            defaults=dados_user
-        )
-        
-        if created:
-            user.set_password('123456')  # Senha para testes
-            user.save()
-            print(f"✅ Usuário criado: {user.username}")
-            
-            # Criar perfil
-            UserProfile.objects.create(
-                user=user,
-                **dados_profile
-            )
-            print(f"✅ Perfil criado para: {user.username}")
-        else:
-            print(f"⚠️  Usuário já existe: {user.username}")
+    return Exercise.objects.all()
+
 
 def criar_treinos():
     """Criar treinos de exemplo"""
     treinos = [
         {
-            'nome': 'Treino Iniciante - Corpo Todo',
-            'descricao': 'Treino completo para iniciantes que trabalha todos os grupos musculares',
-            'categoria': 'forca',
-            'nivel_dificuldade': 'iniciante',
-            'duracao_estimada': 30,
-            'calorias_estimadas': 200,
-            'tipo_treino': 'full_body',
-            'equipamentos_necessarios': [],
-            'areas_focadas': ['corpo_todo'],
-            'is_template': True,
+            'name': 'Push - Peito e Tríceps',
+            'description': 'Treino focado em músculos de empurrar (peito, ombros, tríceps)',
+            'difficulty_level': 'intermediate',
+            'estimated_duration': 50,
+            'target_muscle_groups': 'chest, shoulders, arms',
+            'workout_type': 'strength',
+            'calories_estimate': 320,
+            'is_recommended': True,
+            'equipment_needed': 'Barra, Banco, Halteres',
             'exercicios': [
-                {'nome': 'Flexão de Braço', 'series': 3, 'repeticoes': 10, 'tempo_descanso': 60, 'ordem': 1},
-                {'nome': 'Agachamento Livre', 'series': 3, 'repeticoes': 15, 'tempo_descanso': 60, 'ordem': 2},
-                {'nome': 'Prancha', 'series': 3, 'repeticoes': 30, 'tempo_descanso': 45, 'ordem': 3},
-                {'nome': 'Glute Bridge', 'series': 3, 'repeticoes': 15, 'tempo_descanso': 45, 'ordem': 4}
+                {'name': 'Supino Reto', 'sets': 4, 'reps': '8-12', 'rest_time': 60, 'order': 1},
+                {'name': 'Flexão de Braço', 'sets': 3, 'reps': '15-20', 'rest_time': 45, 'order': 2},
+                {'name': 'Desenvolvimento Militar', 'sets': 3, 'reps': '10-12', 'rest_time': 60, 'order': 3},
+                {'name': 'Tríceps Testa', 'sets': 3, 'reps': '12-15', 'rest_time': 45, 'order': 4},
             ]
         },
         {
-            'nome': 'HIIT Cardio Explosivo',
-            'descricao': 'Treino de alta intensidade para queima de gordura',
-            'categoria': 'cardio',
-            'nivel_dificuldade': 'intermediario',
-            'duracao_estimada': 20,
-            'calorias_estimadas': 300,
-            'tipo_treino': 'hiit',
-            'equipamentos_necessarios': [],
-            'areas_focadas': ['cardio', 'corpo_todo'],
-            'is_template': True,
+            'name': 'Pull - Costas e Bíceps',
+            'description': 'Treino focado em músculos de puxar (costas, bíceps)',
+            'difficulty_level': 'intermediate',
+            'estimated_duration': 45,
+            'target_muscle_groups': 'back, arms',
+            'workout_type': 'strength',
+            'calories_estimate': 300,
+            'is_recommended': True,
+            'equipment_needed': 'Barra, Barra fixa',
             'exercicios': [
-                {'nome': 'Burpee', 'series': 4, 'repeticoes': 8, 'tempo_descanso': 30, 'ordem': 1},
-                {'nome': 'Mountain Climber', 'series': 4, 'repeticoes': 20, 'tempo_descanso': 30, 'ordem': 2},
-                {'nome': 'Jumping Jacks', 'series': 4, 'repeticoes': 30, 'tempo_descanso': 30, 'ordem': 3}
+                {'name': 'Remada Curvada', 'sets': 4, 'reps': '8-12', 'rest_time': 60, 'order': 1},
+                {'name': 'Pull-ups', 'sets': 3, 'reps': '6-10', 'rest_time': 90, 'order': 2},
+                {'name': 'Rosca Direta', 'sets': 3, 'reps': '12-15', 'rest_time': 45, 'order': 3},
             ]
         },
         {
-            'nome': 'Core & Abdômen',
-            'descricao': 'Fortalecimento focado no core e abdômen',
-            'categoria': 'forca',
-            'nivel_dificuldade': 'iniciante',
-            'duracao_estimada': 25,
-            'calorias_estimadas': 150,
-            'tipo_treino': 'funcional',
-            'equipamentos_necessarios': [],
-            'areas_focadas': ['core', 'abdomen'],
-            'is_template': True,
+            'name': 'Legs - Pernas Completo',
+            'description': 'Treino completo de membros inferiores',
+            'difficulty_level': 'advanced',
+            'estimated_duration': 60,
+            'target_muscle_groups': 'legs, abs',
+            'workout_type': 'strength',
+            'calories_estimate': 400,
+            'is_recommended': True,
+            'equipment_needed': 'Barra, Leg Press',
             'exercicios': [
-                {'nome': 'Prancha', 'series': 3, 'repeticoes': 45, 'tempo_descanso': 45, 'ordem': 1},
-                {'nome': 'Abdominal Tradicional', 'series': 3, 'repeticoes': 15, 'tempo_descanso': 30, 'ordem': 2},
-                {'nome': 'Mountain Climber', 'series': 3, 'repeticoes': 20, 'tempo_descanso': 30, 'ordem': 3}
+                {'name': 'Agachamento Livre', 'sets': 4, 'reps': '8-12', 'rest_time': 90, 'order': 1},
+                {'name': 'Leg Press', 'sets': 3, 'reps': '12-15', 'rest_time': 60, 'order': 2},
+                {'name': 'Prancha', 'sets': 3, 'reps': '60 seg', 'rest_time': 30, 'order': 3},
+                {'name': 'Abdominal Tradicional', 'sets': 3, 'reps': '20', 'rest_time': 30, 'order': 4},
             ]
-        }
+        },
+        {
+            'name': 'Treino Iniciante - Corpo Todo',
+            'description': 'Treino completo para quem está começando',
+            'difficulty_level': 'beginner',
+            'estimated_duration': 30,
+            'target_muscle_groups': 'full body',
+            'workout_type': 'full_body',
+            'calories_estimate': 200,
+            'is_recommended': True,
+            'equipment_needed': 'Nenhum',
+            'exercicios': [
+                {'name': 'Flexão de Braço', 'sets': 3, 'reps': '8-10', 'rest_time': 60, 'order': 1},
+                {'name': 'Agachamento Livre (Peso Corporal)', 'sets': 3, 'reps': '15', 'rest_time': 60, 'order': 2},
+                {'name': 'Prancha', 'sets': 3, 'reps': '30 seg', 'rest_time': 45, 'order': 3},
+                {'name': 'Jumping Jacks', 'sets': 3, 'reps': '30', 'rest_time': 30, 'order': 4},
+            ]
+        },
+        {
+            'name': 'HIIT Cardio Explosivo',
+            'description': 'Treino de alta intensidade para queima de gordura',
+            'difficulty_level': 'intermediate',
+            'estimated_duration': 25,
+            'target_muscle_groups': 'full body, cardio',
+            'workout_type': 'cardio',
+            'calories_estimate': 350,
+            'is_recommended': True,
+            'equipment_needed': 'Nenhum',
+            'exercicios': [
+                {'name': 'Burpee', 'sets': 4, 'reps': '10', 'rest_time': 30, 'order': 1},
+                {'name': 'Jumping Jacks', 'sets': 4, 'reps': '30', 'rest_time': 20, 'order': 2},
+                {'name': 'Flexão de Braço', 'sets': 3, 'reps': '15', 'rest_time': 30, 'order': 3},
+            ]
+        },
     ]
     
     for dados_treino in treinos:
         exercicios_dados = dados_treino.pop('exercicios')
         
         treino, created = Workout.objects.get_or_create(
-            nome=dados_treino['nome'],
+            name=dados_treino['name'],
             defaults=dados_treino
         )
         
         if created:
-            print(f"✅ Treino criado: {treino.nome}")
+            print(f"\n✅ Treino criado: {treino.name}")
             
-            # Adicionar exercícios
-            for exercicio_dados in exercicios_dados:
+            # Adicionar exercícios ao treino
+            for ex_dados in exercicios_dados:
                 try:
-                    exercicio = Exercise.objects.get(nome=exercicio_dados['nome'])
+                    exercicio = Exercise.objects.get(name=ex_dados['name'])
                     WorkoutExercise.objects.create(
                         workout=treino,
                         exercise=exercicio,
-                        series=exercicio_dados['series'],
-                        repeticoes=exercicio_dados['repeticoes'],
-                        tempo_descanso=exercicio_dados['tempo_descanso'],
-                        ordem=exercicio_dados['ordem']
+                        sets=ex_dados['sets'],
+                        reps=ex_dados['reps'],
+                        rest_time=ex_dados['rest_time'],
+                        order_in_workout=ex_dados['order']
                     )
+                    print(f"  ➕ {ex_dados['name']}")
                 except Exercise.DoesNotExist:
-                    print(f"⚠️  Exercício não encontrado: {exercicio_dados['nome']}")
+                    print(f"  ⚠️  Exercício não encontrado: {ex_dados['name']}")
         else:
-            print(f"⚠️  Treino já existe: {treino.nome}")
+            print(f"\n⏭️  Já existe: {treino.name}")
+
 
 def main():
-    """Executar tudo"""
-    print("🚀 Populando banco de dados FitAI...")
-    print("=" * 50)
+    """Executar script"""
+    print("=" * 60)
+    print("🚀 POPULANDO BANCO DE DADOS FITAI")
+    print("=" * 60)
     
-    print("\n1️⃣ Criando exercícios...")
+    print("\n1️⃣  CRIANDO EXERCÍCIOS...")
+    print("-" * 60)
     criar_exercicios()
     
-    print("\n2️⃣ Criando usuários de teste...")
-    criar_usuarios_teste()
-    
-    print("\n3️⃣ Criando treinos...")
+    print("\n2️⃣  CRIANDO TREINOS...")
+    print("-" * 60)
     criar_treinos()
     
-    print("\n" + "=" * 50)
-    print("✅ Pronto! Dados criados com sucesso!")
-    print(f"   - Exercícios: {Exercise.objects.count()}")
-    print(f"   - Usuários: {User.objects.count()}")
-    print(f"   - Perfis: {UserProfile.objects.count()}")
-    print(f"   - Treinos: {Workout.objects.count()}")
-    print("\n🔐 Logins de teste:")
-    print("   - Username: joao_silva / Senha: 123456")
-    print("   - Username: maria_santos / Senha: 123456")
-    print("   - Username: ana_costa / Senha: 123456")
+    print("\n" + "=" * 60)
+    print("✅ BANCO POPULADO COM SUCESSO!")
+    print("=" * 60)
+    print(f"\n📊 ESTATÍSTICAS:")
+    print(f"   • Exercícios: {Exercise.objects.count()}")
+    print(f"   • Treinos: {Workout.objects.count()}")
+    print(f"   • Relações Treino-Exercício: {WorkoutExercise.objects.count()}")
+    print("\n💡 Agora você pode testar o app Flutter!")
+    print("   - Acesse a página de treinos")
+    print("   - Teste a geração de treino com IA")
+    print("\n")
 
 if __name__ == '__main__':
     main()

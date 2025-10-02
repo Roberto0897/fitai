@@ -437,52 +437,90 @@ class UserService {
   }
 
   // Login (tenta Firebase primeiro, depois local)
-  static Future<UserRegistrationData?> loginUser(String email, String password) async {
-    email = email.toLowerCase().trim();
+ static Future<UserRegistrationData?> loginUser(String email, String password) async {
+  email = email.toLowerCase().trim();
 
-    // Tentar login no Firebase primeiro (se online)
-    if (await _hasInternetConnection()) {
-      final firebaseUser = await _loginFirebase(email, password);
-      if (firebaseUser != null) {
-        await _saveCurrentUserLocally(firebaseUser);
-        return firebaseUser;
-      }
-    }
+  try {
+    print('🔥 Iniciando login - tentando Firebase...');
+    
+    // Tentar login no Firebase Auth
+    UserCredential userCredential = await _auth.signInWithEmailAndPassword(
+      email: email,
+      password: password,
+    );
 
-    // Fallback: login local
-    return await _loginLocally(email, password);
-  }
+    final String uid = userCredential.user!.uid;
+    print('✅ Firebase Auth: Login bem-sucedido - UID: $uid');
 
-  // Login no Firebase
-  static Future<UserRegistrationData?> _loginFirebase(String email, String password) async {
-    try {
-      UserCredential userCredential = await _auth.signInWithEmailAndPassword(
-        email: email,
-        password: password,
-      );
+    // Buscar dados no Firestore
+    DocumentSnapshot userDoc = await _firestore
+        .collection(_usersCollection)
+        .doc(uid)
+        .get();
 
-      final String uid = userCredential.user!.uid;
+    UserRegistrationData userData;
 
-      DocumentSnapshot userDoc = await _firestore
-          .collection(_usersCollection)
-          .doc(uid)
-          .get();
-
-      if (!userDoc.exists) {
-        await _auth.signOut();
-        return null;
-      }
-
-      final userData = _firestoreToUserData(userDoc.data() as Map<String, dynamic>);
-      print('Login realizado no Firebase: $email');
+    if (!userDoc.exists) {
+      print('⚠️ Usuário existe no Auth mas não no Firestore - criando documento...');
       
-      return userData;
-
-    } catch (e) {
-      print('Falha no login Firebase: $e');
-      return null;
+      // Criar documento básico no Firestore
+      userData = UserRegistrationData(
+        nome: userCredential.user?.displayName ?? 'Usuário',
+        email: email,
+        senha: '', // Não armazenar senha
+        createdAt: DateTime.now(),
+      );
+      
+      // Salvar no Firestore
+      await _firestore.collection(_usersCollection).doc(uid).set({
+        'uid': uid,
+        'nome': userData.nome,
+        'email': userData.email,
+        'provider': 'email',
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+        'syncStatus': 'synced',
+      });
+      
+      print('✅ Documento criado no Firestore para: $email');
+    } else {
+      // Usuário já existe no Firestore
+      userData = _firestoreToUserData(userDoc.data() as Map<String, dynamic>);
     }
+
+    await _saveCurrentUserLocally(userData);
+    
+    print('✅ Login completo: Firebase + Cache local');
+    return userData;
+
+  } on FirebaseAuthException catch (e) {
+    print('❌ FirebaseAuthException: ${e.code} - ${e.message}');
+    
+    switch (e.code) {
+      case 'user-not-found':
+        throw Exception('Email não cadastrado. Faça registro primeiro.');
+      case 'wrong-password':
+        throw Exception('Senha incorreta.');
+      case 'invalid-email':
+        throw Exception('Email inválido.');
+      case 'user-disabled':
+        throw Exception('Usuário desabilitado.');
+      case 'network-request-failed':
+        throw Exception('Sem conexão com internet.');
+      default:
+        throw Exception('Erro ao fazer login: ${e.message}');
+    }
+    
+  } catch (e) {
+    print('❌ Erro inesperado no login: $e');
+    
+    if (e is Exception) {
+      rethrow;
+    }
+    
+    throw Exception('Erro ao fazer login: $e');
   }
+}
 
   // Login local
   static Future<UserRegistrationData?> _loginLocally(String email, String password) async {

@@ -8,8 +8,10 @@ import os
 import django
 
 # Configurar Django ANTES de importar qualquer modelo
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'fitai.settings')
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'fitai.settings.development')
 django.setup()
+
+
 
 # Importar DEPOIS do django.setup()
 from django.contrib.auth.models import User

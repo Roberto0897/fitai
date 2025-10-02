@@ -3,6 +3,8 @@ Configurações para quando você está DESENVOLVENDO
 (seu computador, testando, etc.)
 """
 from .base import *
+import os
+import sys
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
@@ -41,4 +43,30 @@ LOGGING = {
         'handlers': ['console'],
         'level': 'INFO',
     },
+
+    
 }
+
+# REST Framework - Configuração de Autenticação
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'apps.core.authentication.FirebaseAuthentication',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+    ],
+}
+
+def initialize_firebase_on_startup():
+    if os.environ.get('RUN_MAIN') != 'true':
+        return
+    
+    try:
+        from apps.core.firebase_auth import initialize_firebase
+        initialize_firebase()
+    except Exception as e:
+        print(f"⚠️ Erro ao inicializar Firebase: {e}")
+
+# Chamar na inicialização
+if 'runserver' in sys.argv:
+    initialize_firebase_on_startup()

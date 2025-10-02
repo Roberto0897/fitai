@@ -12,6 +12,10 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 
 from pathlib import Path
 
+
+import os
+import sys
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -136,13 +140,24 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # REST Framework (para APIs)
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework.authentication.TokenAuthentication',
+        'apps.core.authentication.FirebaseAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
     ],
 }
 
+CORS_ALLOW_ALL_ORIGINS = True  # Para desenvolvimento
+CORS_ALLOW_CREDENTIALS = True
+
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'origin',
+    'user-agent',
+]
 # CORS (para conectar com Flutter)
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
@@ -152,3 +167,18 @@ CORS_ALLOWED_ORIGINS = [
 # Arquivos de mídia (imagens dos exercícios)
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+
+# Inicializar Firebase quando Django iniciar
+def initialize_firebase_on_startup():
+    if os.environ.get('RUN_MAIN') != 'true':
+        return
+    
+    try:
+        from apps.core.firebase_auth import initialize_firebase
+        initialize_firebase()
+    except Exception as e:
+        print(f"Aviso: Não foi possível inicializar Firebase: {e}")
+
+# Chamar na inicialização
+if 'runserver' in sys.argv:
+    initialize_firebase_on_startup()

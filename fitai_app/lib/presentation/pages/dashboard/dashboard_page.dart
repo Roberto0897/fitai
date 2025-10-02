@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../workouts/workout_detail_page.dart';
 import '../workouts/workouts_page.dart';
+import '../../../service/api_service.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({Key? key}) : super(key: key);
@@ -202,6 +203,7 @@ Widget build(BuildContext context) {
       {'value': '17', 'label': 'Treinos'},
       {'value': '18', 'label': 'Dias ativos'},
       {'value': '80%', 'label': 'Meta semanal'},
+      
     ];
 
     return Padding(
@@ -345,6 +347,8 @@ Widget build(BuildContext context) {
         ),
       ),
     );
+
+    
   }
 
 Widget _buildActionCardsGrid() {
@@ -374,6 +378,8 @@ Widget _buildActionCardsGrid() {
     ),
   );
 }
+
+
 
 Widget _buildProgressCard() {
   return Container(
@@ -488,7 +494,10 @@ Widget _buildProgressCard() {
       ],
     ),
   );
-}
+} 
+
+
+
 Widget _buildMyWorkoutsCard() {
   return GestureDetector(
     onTap: () {

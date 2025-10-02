@@ -75,6 +75,8 @@ htmlcov/
 # MyPy
 .mypy_cache/
 
+
+firebase-credentials.json
 # Migrations (opcional - comente se quiser versionar)
 # */migrations/*.py
 # !*/migrations/__init__.py
