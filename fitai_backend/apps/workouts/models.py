@@ -34,6 +34,11 @@ class Workout(models.Model):
     is_recommended = models.BooleanField(default=False,
                                        help_text="Se este treino é recomendado pela IA")
     created_at = models.DateTimeField(auto_now_add=True)
+    created_by_user = models.ForeignKey(User, on_delete=models.CASCADE, 
+                                   null=True, blank=True,
+                                   related_name='personalized_workouts')
+    is_personalized = models.BooleanField(default=False)
+
     
     def __str__(self):
         return f"{self.name} ({self.difficulty_level or 'Sem dificuldade'})"

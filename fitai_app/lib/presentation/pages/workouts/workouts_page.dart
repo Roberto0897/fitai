@@ -467,7 +467,7 @@ class _WorkoutsPageState extends State<WorkoutsPage> with TickerProviderStateMix
                     ),
                     SizedBox(height: 2),
                     Text(
-                      'Treinos recomendados do Django',
+                      'Treinos gerados pelo FitAI',
                       style: TextStyle(
                         fontSize: 12,
                         color: AppColors.textSecondary,
@@ -630,10 +630,13 @@ class _WorkoutsPageState extends State<WorkoutsPage> with TickerProviderStateMix
   }
 
   void _openWorkoutDetail(WorkoutModel workout) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Abrindo: ${workout.name}'),
-        backgroundColor: AppColors.primary,
+    print('🎯 Navegando para treino ID: ${workout.id} - ${workout.name}');
+    
+    // Navega para a página de detalhes passando o workout
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => WorkoutDetailPage(workout: workout),
       ),
     );
   }

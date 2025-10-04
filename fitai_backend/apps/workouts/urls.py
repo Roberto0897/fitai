@@ -1,6 +1,7 @@
 from django.urls import path
 from . import views
 
+
 urlpatterns = [
     # API básica
     path('workouts/test/', views.test_workouts_api, name='test_workouts_api'),
@@ -27,4 +28,5 @@ urlpatterns = [
     path('analytics/', views.user_analytics, name='user_analytics'),
     path('ai/exercise-recommendations/', views.ai_exercise_recommendations, name='ai_exercise_recommendations'),
     path('ai/generate-workout/', views.generate_ai_workout_plan, name='generate_ai_workout_plan'),
+    
 ]

@@ -7,318 +7,1040 @@ class Command(BaseCommand):
     help = 'Popula o banco de dados com exercícios reais e estruturados'
 
     def handle(self, *args, **options):
-        self.stdout.write(self.style.SUCCESS('🏋️‍♂️ Iniciando população de exercícios...'))
+        self.stdout.write(self.style.SUCCESS('Iniciando população de exercícios...'))
 
         # Limpar exercícios existentes (opcional)
         Exercise.objects.all().delete()
-        self.stdout.write('🗑️ Exercícios anteriores removidos')
+        self.stdout.write('Exercícios anteriores removidos')
 
         exercises_data = [
-            # PEITO (CHEST) - 10 exercícios
+            # ========================================
+            # PEITO (15 exercícios)
+            # ========================================
+            {
+                'name': 'Supino Reto com Barra',
+                'description': 'Exercício clássico para desenvolvimento do peitoral maior',
+                'muscle_group': 'chest',
+                'difficulty_level': 'intermediate',
+                'equipment_needed': 'Barra, Banco',
+                'instructions': 'Deite no banco, pegue a barra com pegada média, desça até o peito e empurre.',
+                'duration_minutes': 8,
+                'video_url': 'https://www.youtube.com/watch?v=rT7DgCr-3pg'
+            },
+            {
+                'name': 'Supino Inclinado',
+                'description': 'Foca na porção superior do peitoral',
+                'muscle_group': 'chest',
+                'difficulty_level': 'intermediate',
+                'equipment_needed': 'Barra, Banco inclinado',
+                'instructions': 'No banco inclinado a 45°, execute o movimento de supino.',
+                'duration_minutes': 8,
+                'video_url': 'https://www.youtube.com/watch?v=DbFgADa2PL8'
+            },
+            {
+                'name': 'Supino Declinado',
+                'description': 'Trabalha a porção inferior do peitoral',
+                'muscle_group': 'chest',
+                'difficulty_level': 'intermediate',
+                'equipment_needed': 'Barra, Banco declinado',
+                'instructions': 'No banco declinado, desça a barra controladamente até o peito.',
+                'duration_minutes': 7,
+                'video_url': 'https://www.youtube.com/watch?v=LfyQBUKR8SE'
+            },
             {
                 'name': 'Flexão de Braço Tradicional',
-                'description': 'Exercício clássico que trabalha peito, ombros e tríceps usando o peso corporal.',
+                'description': 'Exercício básico para peito usando peso corporal',
                 'muscle_group': 'chest',
                 'difficulty_level': 'beginner',
                 'equipment_needed': 'Nenhum',
+                'instructions': 'Posição de prancha, desça até peito quase tocar o chão.',
                 'duration_minutes': 5,
-                'calories_per_minute': 8.0,
-                'instructions': '1. Deite de bruços no chão\n2. Apoie as mãos no chão na largura dos ombros\n3. Mantenha o corpo reto\n4. Desça até quase tocar o peito no chão\n5. Empurre de volta à posição inicial'
-            },
-            {
-                'name': 'Flexão de Braço Inclinada',
-                'description': 'Variação mais fácil da flexão tradicional, ideal para iniciantes.',
-                'muscle_group': 'chest',
-                'difficulty_level': 'beginner',
-                'equipment_needed': 'Banco ou superfície elevada',
-                'duration_minutes': 5,
-                'calories_per_minute': 6.5,
-                'instructions': '1. Apoie as mãos em uma superfície elevada (banco/sofá)\n2. Corpo em linha reta\n3. Desça controladamente\n4. Empurre de volta\n5. Mais fácil que flexão no chão'
-            },
-            {
-                'name': 'Supino com Halteres',
-                'description': 'Exercício fundamental para desenvolvimento do peitoral com halteres.',
-                'muscle_group': 'chest',
-                'difficulty_level': 'intermediate',
-                'equipment_needed': 'Halteres, Banco',
-                'duration_minutes': 8,
-                'calories_per_minute': 7.5,
-                'instructions': '1. Deite no banco com halter em cada mão\n2. Braços estendidos acima do peito\n3. Desça os halteres controladamente\n4. Empurre de volta à posição inicial\n5. Mantenha os pés firmes no chão'
-            },
-            {
-                'name': 'Crucifixo com Halteres',
-                'description': 'Movimento de isolamento para o peitoral com amplitude completa.',
-                'muscle_group': 'chest',
-                'difficulty_level': 'intermediate',
-                'equipment_needed': 'Halteres, Banco',
-                'duration_minutes': 6,
-                'calories_per_minute': 6.8,
-                'instructions': '1. Deite no banco com halteres nas mãos\n2. Braços ligeiramente flexionados\n3. Abra os braços em movimento circular\n4. Sinta o alongamento no peito\n5. Retorne controladamente'
+                'video_url': 'https://www.youtube.com/watch?v=IODxDxX7oi4'
             },
             {
                 'name': 'Flexão Diamante',
-                'description': 'Variação avançada que enfatiza tríceps e peitoral interno.',
+                'description': 'Variação que enfatiza tríceps e centro do peito',
+                'muscle_group': 'chest',
+                'difficulty_level': 'intermediate',
+                'equipment_needed': 'Nenhum',
+                'instructions': 'Mãos juntas formando diamante, execute flexões.',
+                'duration_minutes': 6,
+                'video_url': 'https://www.youtube.com/watch?v=J0DnG1_S92I'
+            },
+            {
+                'name': 'Flexão Archer',
+                'description': 'Flexão avançada com ênfase unilateral',
                 'muscle_group': 'chest',
                 'difficulty_level': 'advanced',
                 'equipment_needed': 'Nenhum',
-                'duration_minutes': 4,
-                'calories_per_minute': 9.2,
-                'instructions': '1. Posição de flexão\n2. Junte as mãos formando um diamante\n3. Polegares e indicadores se tocando\n4. Desça mantendo cotovelos próximos\n5. Movimento mais difícil que flexão normal'
+                'instructions': 'Estenda um braço lateralmente enquanto flexiona o outro.',
+                'duration_minutes': 7,
+                'video_url': 'https://www.youtube.com/watch?v=Uw7A-C4qkHs'
             },
-            
-            # COSTAS (BACK) - 12 exercícios
             {
-                'name': 'Remada Curvada com Halteres',
-                'description': 'Exercício fundamental para desenvolver a musculatura das costas.',
-                'muscle_group': 'back',
+                'name': 'Crucifixo com Halteres',
+                'description': 'Isolamento do peitoral com amplitude completa',
+                'muscle_group': 'chest',
                 'difficulty_level': 'intermediate',
-                'equipment_needed': 'Halteres',
-                'duration_minutes': 8,
-                'calories_per_minute': 7.8,
-                'instructions': '1. Pés na largura dos ombros\n2. Curve o tronco mantendo costas retas\n3. Halteres nas mãos com braços estendidos\n4. Puxe os cotovelos para trás\n5. Contraia as escápulas no topo'
+                'equipment_needed': 'Halteres, Banco',
+                'instructions': 'Abra os braços lateralmente e retorne controladamente.',
+                'duration_minutes': 7,
+                'video_url': 'https://www.youtube.com/watch?v=eozdVDA78K0'
             },
             {
-                'name': 'Superman',
-                'description': 'Exercício isométrico que fortalece a região lombar e glúteos.',
-                'muscle_group': 'back',
+                'name': 'Peck Deck',
+                'description': 'Isolamento em máquina para peitoral',
+                'muscle_group': 'chest',
                 'difficulty_level': 'beginner',
-                'equipment_needed': 'Nenhum',
-                'duration_minutes': 5,
-                'calories_per_minute': 5.2,
-                'instructions': '1. Deite de bruços no chão\n2. Braços estendidos à frente\n3. Levante simultaneamente braços, peito e pernas\n4. Mantenha a posição por 2-3 segundos\n5. Desça controladamente'
+                'equipment_needed': 'Máquina peck deck',
+                'instructions': 'Junte os braços à frente mantendo cotovelos levemente flexionados.',
+                'duration_minutes': 6,
+                'video_url': 'https://www.youtube.com/watch?v=Z54ZW2PxI_8'
+            },
+            {
+                'name': 'Chest Press na Máquina',
+                'description': 'Supino em máquina com trajeto guiado',
+                'muscle_group': 'chest',
+                'difficulty_level': 'beginner',
+                'equipment_needed': 'Máquina chest press',
+                'instructions': 'Empurre as alças para frente mantendo costas apoiadas.',
+                'duration_minutes': 7,
+                'video_url': 'https://www.youtube.com/watch?v=xUm0BiZCWlQ'
+            },
+            {
+                'name': 'Crossover no Cabo',
+                'description': 'Isolamento com tensão constante',
+                'muscle_group': 'chest',
+                'difficulty_level': 'intermediate',
+                'equipment_needed': 'Polia dupla',
+                'instructions': 'Cruze os cabos à frente do corpo em movimento amplo.',
+                'duration_minutes': 6,
+                'video_url': 'https://www.youtube.com/watch?v=taI4XduLpTk'
             },
             {
                 'name': 'Pullover com Halter',
-                'description': 'Movimento que trabalha peito, costas e músculos respiratórios.',
-                'muscle_group': 'back',
+                'description': 'Trabalha peito e serrátil',
+                'muscle_group': 'chest',
                 'difficulty_level': 'intermediate',
                 'equipment_needed': 'Halter, Banco',
+                'instructions': 'Segure halter acima do peito e leve para trás da cabeça.',
                 'duration_minutes': 6,
-                'calories_per_minute': 6.5,
-                'instructions': '1. Deite no banco segurando um halter\n2. Braços estendidos sobre o peito\n3. Desça o peso atrás da cabeça\n4. Mantenha braços ligeiramente flexionados\n5. Retorne à posição inicial'
+                'video_url': 'https://www.youtube.com/watch?v=FK0MZLJj5qw'
+            },
+            {
+                'name': 'Flexão com Pés Elevados',
+                'description': 'Aumenta ênfase na porção superior do peito',
+                'muscle_group': 'chest',
+                'difficulty_level': 'intermediate',
+                'equipment_needed': 'Banco ou elevação',
+                'instructions': 'Pés em superfície elevada, execute flexões.',
+                'duration_minutes': 6,
+                'video_url': 'https://www.youtube.com/watch?v=g4HGFZRo-4o'
+            },
+            {
+                'name': 'Flexão com Palmas',
+                'description': 'Exercício pliométrico para potência',
+                'muscle_group': 'chest',
+                'difficulty_level': 'advanced',
+                'equipment_needed': 'Nenhum',
+                'instructions': 'Empurre explosivamente e bata palmas no ar.',
+                'duration_minutes': 5,
+                'video_url': 'https://www.youtube.com/watch?v=qAQ_dvKk_x8'
+            },
+            {
+                'name': 'Supino com Halteres',
+                'description': 'Maior amplitude e trabalho estabilizador',
+                'muscle_group': 'chest',
+                'difficulty_level': 'intermediate',
+                'equipment_needed': 'Halteres, Banco',
+                'instructions': 'Desça halteres até nível do peito e empurre.',
+                'duration_minutes': 8,
+                'video_url': 'https://www.youtube.com/watch?v=VmB1G1K7v94'
+            },
+            {
+                'name': 'Dips para Peito',
+                'description': 'Exercício avançado em barras paralelas',
+                'muscle_group': 'chest',
+                'difficulty_level': 'advanced',
+                'equipment_needed': 'Barras paralelas',
+                'instructions': 'Incline-se para frente e desça com controle.',
+                'duration_minutes': 7,
+                'video_url': 'https://www.youtube.com/watch?v=2z8JmcrW-As'
             },
 
-            # OMBROS (SHOULDERS) - 10 exercícios
+            # ========================================
+            # COSTAS (15 exercícios)
+            # ========================================
             {
-                'name': 'Desenvolvimento com Halteres',
-                'description': 'Exercício básico para desenvolvimento dos ombros.',
-                'muscle_group': 'shoulders',
-                'difficulty_level': 'beginner',
-                'equipment_needed': 'Halteres',
+                'name': 'Barra Fixa Pronada',
+                'description': 'Exercício fundamental para desenvolvimento das costas',
+                'muscle_group': 'back',
+                'difficulty_level': 'intermediate',
+                'equipment_needed': 'Barra fixa',
+                'instructions': 'Puxe o corpo até queixo passar a barra.',
                 'duration_minutes': 7,
-                'calories_per_minute': 7.2,
-                'instructions': '1. Sentado ou em pé, halteres na altura dos ombros\n2. Palmas voltadas para frente\n3. Empurre os pesos para cima\n4. Estenda completamente os braços\n5. Desça controladamente'
+                'video_url': 'https://www.youtube.com/watch?v=eGo4IYlbE5g'
+            },
+            {
+                'name': 'Barra Fixa Supinada',
+                'description': 'Ênfase maior em bíceps e latíssimo inferior',
+                'muscle_group': 'back',
+                'difficulty_level': 'intermediate',
+                'equipment_needed': 'Barra fixa',
+                'instructions': 'Pegada supinada, puxe até queixo na barra.',
+                'duration_minutes': 7,
+                'video_url': 'https://www.youtube.com/watch?v=sIvJTfGxdFo'
+            },
+            {
+                'name': 'Remada Curvada com Barra',
+                'description': 'Massa e espessura para as costas',
+                'muscle_group': 'back',
+                'difficulty_level': 'intermediate',
+                'equipment_needed': 'Barra',
+                'instructions': 'Tronco inclinado, puxe barra em direção ao umbigo.',
+                'duration_minutes': 8,
+                'video_url': 'https://www.youtube.com/watch?v=FWJR5Ve8bnQ'
+            },
+            {
+                'name': 'Remada Unilateral com Halter',
+                'description': 'Trabalho isolado de cada lado',
+                'muscle_group': 'back',
+                'difficulty_level': 'beginner',
+                'equipment_needed': 'Halter, Banco',
+                'instructions': 'Apoiado no banco, puxe halter até o quadril.',
+                'duration_minutes': 7,
+                'video_url': 'https://www.youtube.com/watch?v=roCP6wCXPqo'
+            },
+            {
+                'name': 'Puxada Frontal',
+                'description': 'Desenvolvimento da largura das costas',
+                'muscle_group': 'back',
+                'difficulty_level': 'beginner',
+                'equipment_needed': 'Polia alta',
+                'instructions': 'Puxe a barra até o peito mantendo tronco reto.',
+                'duration_minutes': 7,
+                'video_url': 'https://www.youtube.com/watch?v=CAwf7n6Luuc'
+            },
+            {
+                'name': 'Puxada na Nuca',
+                'description': 'Foca na porção superior das costas',
+                'muscle_group': 'back',
+                'difficulty_level': 'intermediate',
+                'equipment_needed': 'Polia alta',
+                'instructions': 'Puxe barra até a nuca com cuidado.',
+                'duration_minutes': 7,
+                'video_url': 'https://www.youtube.com/watch?v=lKSsYH6xLbQ'
+            },
+            {
+                'name': 'Remada Cavalinho',
+                'description': 'Trabalha músculos profundos das costas',
+                'muscle_group': 'back',
+                'difficulty_level': 'beginner',
+                'equipment_needed': 'Polia baixa',
+                'instructions': 'Sentado, puxe o cabo em direção ao abdômen.',
+                'duration_minutes': 7,
+                'video_url': 'https://www.youtube.com/watch?v=UCXxvVItLoM'
+            },
+            {
+                'name': 'Pulldown com Corda',
+                'description': 'Amplitude maior e trabalho de trapézio',
+                'muscle_group': 'back',
+                'difficulty_level': 'intermediate',
+                'equipment_needed': 'Polia alta, Corda',
+                'instructions': 'Puxe corda abrindo na descida.',
+                'duration_minutes': 6,
+                'video_url': 'https://www.youtube.com/watch?v=A5K_gdKcd0g'
+            },
+            {
+                'name': 'Levantamento Terra',
+                'description': 'Exercício composto para corpo todo',
+                'muscle_group': 'back',
+                'difficulty_level': 'advanced',
+                'equipment_needed': 'Barra',
+                'instructions': 'Levante a barra do chão mantendo costas retas.',
+                'duration_minutes': 10,
+                'video_url': 'https://www.youtube.com/watch?v=op9kVnSso6Q'
+            },
+            {
+                'name': 'Levantamento Terra Romeno',
+                'description': 'Ênfase em lombar e posteriores de coxa',
+                'muscle_group': 'back',
+                'difficulty_level': 'intermediate',
+                'equipment_needed': 'Barra',
+                'instructions': 'Desça a barra deslizando pelas pernas.',
+                'duration_minutes': 8,
+                'video_url': 'https://www.youtube.com/watch?v=JCXUYuzwNrM'
+            },
+            {
+                'name': 'Remada na Máquina',
+                'description': 'Movimento guiado para remada horizontal',
+                'muscle_group': 'back',
+                'difficulty_level': 'beginner',
+                'equipment_needed': 'Máquina de remada',
+                'instructions': 'Puxe as alças mantendo peito apoiado.',
+                'duration_minutes': 7,
+                'video_url': 'https://www.youtube.com/watch?v=UCXxvVItLoM'
+            },
+            {
+                'name': 'Face Pull',
+                'description': 'Trabalha deltoide posterior e trapézio',
+                'muscle_group': 'back',
+                'difficulty_level': 'beginner',
+                'equipment_needed': 'Polia alta, Corda',
+                'instructions': 'Puxe corda em direção ao rosto abrindo braços.',
+                'duration_minutes': 6,
+                'video_url': 'https://www.youtube.com/watch?v=rep-qVOkqgk'
+            },
+            {
+                'name': 'Remada Invertida',
+                'description': 'Peso corporal para desenvolvimento das costas',
+                'muscle_group': 'back',
+                'difficulty_level': 'intermediate',
+                'equipment_needed': 'Barra baixa ou TRX',
+                'instructions': 'Suspenso na barra, puxe peito em direção a ela.',
+                'duration_minutes': 6,
+                'video_url': 'https://www.youtube.com/watch?v=hXTc1mDnZCw'
+            },
+            {
+                'name': 'T-Bar Row',
+                'description': 'Remada com barra fixa em uma extremidade',
+                'muscle_group': 'back',
+                'difficulty_level': 'intermediate',
+                'equipment_needed': 'Barra T ou landmine',
+                'instructions': 'Puxe a barra mantendo tronco inclinado.',
+                'duration_minutes': 8,
+                'video_url': 'https://www.youtube.com/watch?v=j3Igk5yZKBE'
+            },
+            {
+                'name': 'Good Morning',
+                'description': 'Fortalece lombar e posteriores',
+                'muscle_group': 'back',
+                'difficulty_level': 'intermediate',
+                'equipment_needed': 'Barra',
+                'instructions': 'Barra nas costas, incline tronco para frente.',
+                'duration_minutes': 7,
+                'video_url': 'https://www.youtube.com/watch?v=YA-h3n20qNo'
+            },
+
+            # ========================================
+            # PERNAS (20 exercícios)
+            # ========================================
+            {
+                'name': 'Agachamento Livre com Barra',
+                'description': 'Rei dos exercícios para pernas',
+                'muscle_group': 'legs',
+                'difficulty_level': 'intermediate',
+                'equipment_needed': 'Barra, Rack',
+                'instructions': 'Desça até coxas paralelas ao chão.',
+                'duration_minutes': 10,
+                'video_url': 'https://www.youtube.com/watch?v=ultWZbUMPL8'
+            },
+            {
+                'name': 'Agachamento Frontal',
+                'description': 'Ênfase maior em quadríceps',
+                'muscle_group': 'legs',
+                'difficulty_level': 'advanced',
+                'equipment_needed': 'Barra, Rack',
+                'instructions': 'Barra na frente dos ombros, agache profundamente.',
+                'duration_minutes': 9,
+                'video_url': 'https://www.youtube.com/watch?v=uYumuL_G_V0'
+            },
+            {
+                'name': 'Agachamento Sumô',
+                'description': 'Trabalha mais glúteos e adutor',
+                'muscle_group': 'legs',
+                'difficulty_level': 'intermediate',
+                'equipment_needed': 'Barra ou halter',
+                'instructions': 'Pés bem afastados, desça mantendo tronco reto.',
+                'duration_minutes': 8,
+                'video_url': 'https://www.youtube.com/watch?v=0BQCbqgY02E'
+            },
+            {
+                'name': 'Agachamento Búlgaro',
+                'description': 'Trabalho unilateral intenso',
+                'muscle_group': 'legs',
+                'difficulty_level': 'intermediate',
+                'equipment_needed': 'Banco, Halteres',
+                'instructions': 'Pé traseiro elevado, desça com a perna da frente.',
+                'duration_minutes': 8,
+                'video_url': 'https://www.youtube.com/watch?v=2C-uSU5Bc1g'
+            },
+            {
+                'name': 'Leg Press 45°',
+                'description': 'Grande ativação de quadríceps e glúteos',
+                'muscle_group': 'legs',
+                'difficulty_level': 'beginner',
+                'equipment_needed': 'Máquina leg press',
+                'instructions': 'Empurre a plataforma com os pés.',
+                'duration_minutes': 8,
+                'video_url': 'https://www.youtube.com/watch?v=IZxyjW7MPJQ'
+            },
+            {
+                'name': 'Cadeira Extensora',
+                'description': 'Isolamento de quadríceps',
+                'muscle_group': 'legs',
+                'difficulty_level': 'beginner',
+                'equipment_needed': 'Máquina extensora',
+                'instructions': 'Estenda as pernas contra a resistência.',
+                'duration_minutes': 6,
+                'video_url': 'https://www.youtube.com/watch?v=YyvSfVjQeL0'
+            },
+            {
+                'name': 'Mesa Flexora',
+                'description': 'Isolamento de posteriores de coxa',
+                'muscle_group': 'legs',
+                'difficulty_level': 'beginner',
+                'equipment_needed': 'Máquina flexora',
+                'instructions': 'Flexione as pernas trazendo calcanhares aos glúteos.',
+                'duration_minutes': 6,
+                'video_url': 'https://www.youtube.com/watch?v=ELOCsoDSmrg'
+            },
+            {
+                'name': 'Stiff',
+                'description': 'Desenvolvimento de posteriores e glúteos',
+                'muscle_group': 'legs',
+                'difficulty_level': 'intermediate',
+                'equipment_needed': 'Barra ou halteres',
+                'instructions': 'Desça o peso deslizando pelas pernas.',
+                'duration_minutes': 8,
+                'video_url': 'https://www.youtube.com/watch?v=1uDiW5--rAE'
+            },
+            {
+                'name': 'Afundo com Halteres',
+                'description': 'Trabalho unilateral completo',
+                'muscle_group': 'legs',
+                'difficulty_level': 'intermediate',
+                'equipment_needed': 'Halteres',
+                'instructions': 'Dê um passo à frente e desça até joelho quase tocar o chão.',
+                'duration_minutes': 8,
+                'video_url': 'https://www.youtube.com/watch?v=QOVaHwm-Q6U'
+            },
+            {
+                'name': 'Afundo Caminhando',
+                'description': 'Afundo dinâmico e funcional',
+                'muscle_group': 'legs',
+                'difficulty_level': 'intermediate',
+                'equipment_needed': 'Halteres ou peso corporal',
+                'instructions': 'Execute afundos alternados caminhando para frente.',
+                'duration_minutes': 7,
+                'video_url': 'https://www.youtube.com/watch?v=D7KaRcUTQeE'
+            },
+            {
+                'name': 'Passada',
+                'description': 'Grande amplitude de movimento',
+                'muscle_group': 'legs',
+                'difficulty_level': 'beginner',
+                'equipment_needed': 'Nenhum ou halteres',
+                'instructions': 'Dê passos largos alternando as pernas.',
+                'duration_minutes': 7,
+                'video_url': 'https://www.youtube.com/watch?v=L8fvypPrzzs'
+            },
+            {
+                'name': 'Hack Squat',
+                'description': 'Agachamento em máquina com ângulo',
+                'muscle_group': 'legs',
+                'difficulty_level': 'intermediate',
+                'equipment_needed': 'Máquina hack',
+                'instructions': 'Desça controladamente na máquina hack.',
+                'duration_minutes': 8,
+                'video_url': 'https://www.youtube.com/watch?v=0tn5K9NlCfo'
+            },
+            {
+                'name': 'Elevação Pélvica',
+                'description': 'Foco em glúteos',
+                'muscle_group': 'legs',
+                'difficulty_level': 'beginner',
+                'equipment_needed': 'Nenhum ou barra',
+                'instructions': 'Apoiado no chão, eleve quadril contraindo glúteos.',
+                'duration_minutes': 6,
+                'video_url': 'https://www.youtube.com/watch?v=wPM8icPu6H8'
+            },
+            {
+                'name': 'Hip Thrust',
+                'description': 'Máxima ativação de glúteos',
+                'muscle_group': 'legs',
+                'difficulty_level': 'intermediate',
+                'equipment_needed': 'Barra, Banco',
+                'instructions': 'Costas no banco, eleve quadril com barra.',
+                'duration_minutes': 8,
+                'video_url': 'https://www.youtube.com/watch?v=xDmFkJxPzeM'
+            },
+            {
+                'name': 'Panturrilha em Pé',
+                'description': 'Desenvolvimento das panturrilhas',
+                'muscle_group': 'legs',
+                'difficulty_level': 'beginner',
+                'equipment_needed': 'Máquina ou step',
+                'instructions': 'Eleve-se nas pontas dos pés.',
+                'duration_minutes': 5,
+                'video_url': 'https://www.youtube.com/watch?v=gwLzBJYoWlI'
+            },
+            {
+                'name': 'Panturrilha Sentado',
+                'description': 'Isolamento do sóleo',
+                'muscle_group': 'legs',
+                'difficulty_level': 'beginner',
+                'equipment_needed': 'Máquina de panturrilha',
+                'instructions': 'Sentado, eleve calcanhares contra resistência.',
+                'duration_minutes': 5,
+                'video_url': 'https://www.youtube.com/watch?v=JbyjNymZOt0'
+            },
+            {
+                'name': 'Pistol Squat',
+                'description': 'Agachamento unilateral avançado',
+                'muscle_group': 'legs',
+                'difficulty_level': 'advanced',
+                'equipment_needed': 'Nenhum',
+                'instructions': 'Agache em uma perna só, outra estendida.',
+                'duration_minutes': 7,
+                'video_url': 'https://www.youtube.com/watch?v=vq5-vdgJc0I'
+            },
+            {
+                'name': 'Jump Squat',
+                'description': 'Agachamento pliométrico',
+                'muscle_group': 'legs',
+                'difficulty_level': 'intermediate',
+                'equipment_needed': 'Nenhum',
+                'instructions': 'Agache e salte explosivamente.',
+                'duration_minutes': 6,
+                'video_url': 'https://www.youtube.com/watch?v=Azl5qB_Sg'
+            },
+            {
+                'name': 'Box Jump',
+                'description': 'Salto em caixa para potência',
+                'muscle_group': 'legs',
+                'difficulty_level': 'intermediate',
+                'equipment_needed': 'Caixa ou step',
+                'instructions': 'Salte sobre a caixa e desça controladamente.',
+                'duration_minutes': 7,
+                'video_url': 'https://www.youtube.com/watch?v=NBY9-kTuHEk'
+            },
+            {
+                'name': 'Wall Sit',
+                'description': 'Isometria para resistência',
+                'muscle_group': 'legs',
+                'difficulty_level': 'beginner',
+                'equipment_needed': 'Parede',
+                'instructions': 'Apoiado na parede, mantenha posição de agachamento.',
+                'duration_minutes': 3,
+                'video_url': 'https://www.youtube.com/watch?v=y-wV4Venusw'
+            },
+
+            # ========================================
+            # OMBROS (12 exercícios)
+            # ========================================
+            {
+                'name': 'Desenvolvimento com Barra',
+                'description': 'Massa para ombros completos',
+                'muscle_group': 'shoulders',
+                'difficulty_level': 'intermediate',
+                'equipment_needed': 'Barra',
+                'instructions': 'Empurre a barra acima da cabeça.',
+                'duration_minutes': 7,
+                'video_url': 'https://www.youtube.com/watch?v=2yjwXTZQDDI'
+            },
+            {
+                'name': 'Desenvolvimento Arnold',
+                'description': 'Variação com rotação completa',
+                'muscle_group': 'shoulders',
+                'difficulty_level': 'intermediate',
+                'equipment_needed': 'Halteres',
+                'instructions': 'Gire halteres durante o movimento de elevação.',
+                'duration_minutes': 7,
+                'video_url': 'https://www.youtube.com/watch?v=6Z15_WdXmVw'
             },
             {
                 'name': 'Elevação Lateral',
-                'description': 'Isolamento para a porção lateral do deltóide.',
+                'description': 'Isolamento de deltoide médio',
                 'muscle_group': 'shoulders',
                 'difficulty_level': 'beginner',
                 'equipment_needed': 'Halteres',
-                'duration_minutes': 5,
-                'calories_per_minute': 6.0,
-                'instructions': '1. Em pé, halter em cada mão ao lado do corpo\n2. Braços ligeiramente flexionados\n3. Levante lateralmente até altura dos ombros\n4. Pause no topo\n5. Desça lentamente'
+                'instructions': 'Eleve halteres lateralmente até altura dos ombros.',
+                'duration_minutes': 6,
+                'video_url': 'https://www.youtube.com/watch?v=3VcKaXpzqRo'
             },
             {
                 'name': 'Elevação Frontal',
-                'description': 'Trabalha a porção anterior do deltóide.',
+                'description': 'Trabalha deltoide anterior',
+                'muscle_group': 'shoulders',
+                'difficulty_level': 'beginner',
+                'equipment_needed': 'Halteres ou barra',
+                'instructions': 'Eleve peso à frente até altura dos olhos.',
+                'duration_minutes': 6,
+                'video_url': 'https://www.youtube.com/watch?v=-t7fuZ0KhDA'
+            },
+            {
+                'name': 'Remada Alta',
+                'description': 'Trapézio e deltoides',
+                'muscle_group': 'shoulders',
+                'difficulty_level': 'beginner',
+                'equipment_needed': 'Barra',
+                'instructions': 'Puxe barra até próximo ao queixo.',
+                'duration_minutes': 6,
+                'video_url': 'https://www.youtube.com/watch?v=Q5AWhIscenc'
+            },
+            {
+                'name': 'Crucifixo Invertido',
+                'description': 'Deltoide posterior isolado',
+                'muscle_group': 'shoulders',
+                'difficulty_level': 'beginner',
+                'equipment_needed': 'Halteres, Banco',
+                'instructions': 'Inclinado, abra halteres lateralmente.',
+                'duration_minutes': 6,
+                'video_url': 'https://www.youtube.com/watch?v=ttvfGg9d76c'
+            },
+            {
+                'name': 'Desenvolvimento na Máquina',
+                'description': 'Trajeto guiado para ombros',
+                'muscle_group': 'shoulders',
+                'difficulty_level': 'beginner',
+                'equipment_needed': 'Máquina shoulder press',
+                'instructions': 'Empurre as alças para cima.',
+                'duration_minutes': 6,
+                'video_url': 'https://www.youtube.com/watch?v=M2rwvNhTOu0'
+            },
+            {
+                'name': 'Encolhimento com Barra',
+                'description': 'Massa para trapézio',
+                'muscle_group': 'shoulders',
+                'difficulty_level': 'beginner',
+                'equipment_needed': 'Barra',
+                'instructions': 'Eleve ombros em direção às orelhas.',
+                'duration_minutes': 5,
+                'video_url': 'https://www.youtube.com/watch?v=g6qbq4Lf1FI'
+            },
+            {
+                'name': 'Encolhimento com Halteres',
+                'description': 'Variação com maior amplitude',
                 'muscle_group': 'shoulders',
                 'difficulty_level': 'beginner',
                 'equipment_needed': 'Halteres',
+                'instructions': 'Segure halteres lateralmente e encolha ombros.',
                 'duration_minutes': 5,
-                'calories_per_minute': 5.8,
-                'instructions': '1. Em pé, halteres na frente das coxas\n2. Palmas voltadas para baixo\n3. Levante à frente até altura dos ombros\n4. Braços ligeiramente flexionados\n5. Controle a descida'
+                'video_url': 'https://www.youtube.com/watch?v=cJRVVxmytaM'
+            },
+            {
+                'name': 'Elevação W',
+                'description': 'Fortalecimento de manguito rotador',
+                'muscle_group': 'shoulders',
+                'difficulty_level': 'beginner',
+                'equipment_needed': 'Halteres leves',
+                'instructions': 'Forme W com os braços e eleve.',
+                'duration_minutes': 5,
+                'video_url': 'https://www.youtube.com/watch?v=XPPfnSEATJA'
+            },
+            {
+                'name': 'Pike Push-up',
+                'description': 'Flexão para ombros sem equipamento',
+                'muscle_group': 'shoulders',
+                'difficulty_level': 'intermediate',
+                'equipment_needed': 'Nenhum',
+                'instructions': 'Corpo em V invertido, flexione braços.',
+                'duration_minutes': 6,
+                'video_url': 'https://www.youtube.com/watch?v=x4YNjHHyW4Y'
+            },
+            {
+                'name': 'Handstand Push-up',
+                'description': 'Flexão invertida avançada',
+                'muscle_group': 'shoulders',
+                'difficulty_level': 'advanced',
+                'equipment_needed': 'Parede',
+                'instructions': 'Invertido na parede, flexione os braços.',
+                'duration_minutes': 6,
+                'video_url': 'https://www.youtube.com/watch?v=tQhrk6WMcKw'
             },
 
-            # BRAÇOS (ARMS) - 12 exercícios
+            # ========================================
+            # BRAÇOS (15 exercícios)
+            # ========================================
             {
-                'name': 'Rosca Direta com Halteres',
-                'description': 'Exercício clássico para desenvolvimento do bíceps.',
+                'name': 'Rosca Direta com Barra',
+                'description': 'Exercício clássico para bíceps',
+                'muscle_group': 'arms',
+                'difficulty_level': 'beginner',
+                'equipment_needed': 'Barra',
+                'instructions': 'Flexione cotovelos levantando a barra.',
+                'duration_minutes': 6,
+                'video_url': 'https://www.youtube.com/watch?v=kwG2ipFRgfo'
+            },
+            {
+                'name': 'Rosca Alternada',
+                'description': 'Trabalho isolado de cada bíceps',
                 'muscle_group': 'arms',
                 'difficulty_level': 'beginner',
                 'equipment_needed': 'Halteres',
+                'instructions': 'Alterne flexões de cotovelo com halteres.',
                 'duration_minutes': 6,
-                'calories_per_minute': 6.5,
-                'instructions': '1. Em pé, halter em cada mão\n2. Braços estendidos ao lado do corpo\n3. Flexione o cotovelo levantando o peso\n4. Contraia o bíceps no topo\n5. Desça controladamente'
-            },
-            {
-                'name': 'Tríceps Francês',
-                'description': 'Exercício de isolamento para tríceps.',
-                'muscle_group': 'arms',
-                'difficulty_level': 'intermediate',
-                'equipment_needed': 'Halter',
-                'duration_minutes': 6,
-                'calories_per_minute': 6.2,
-                'instructions': '1. Sentado, segure um halter com as duas mãos\n2. Braços estendidos acima da cabeça\n3. Flexione apenas os cotovelos\n4. Desça o peso atrás da cabeça\n5. Estenda de volta'
+                'video_url': 'https://www.youtube.com/watch?v=sAq_ocpRh_I'
             },
             {
                 'name': 'Rosca Martelo',
-                'description': 'Variação da rosca que trabalha bíceps e antebraço.',
+                'description': 'Trabalha bíceps e braquial',
                 'muscle_group': 'arms',
                 'difficulty_level': 'beginner',
                 'equipment_needed': 'Halteres',
+                'instructions': 'Flexione com pegada neutra (palmas frente a frente).',
                 'duration_minutes': 6,
-                'calories_per_minute': 6.0,
-                'instructions': '1. Em pé, halteres com pegada neutra\n2. Polegares apontando para cima\n3. Flexione alternadamente\n4. Mantenha pulsos firmes\n5. Movimento controlado'
-            },
-
-            # PERNAS (LEGS) - 15 exercícios
-            {
-                'name': 'Agachamento Livre',
-                'description': 'O rei dos exercícios para pernas, trabalha quadríceps, glúteos e posterior.',
-                'muscle_group': 'legs',
-                'difficulty_level': 'beginner',
-                'equipment_needed': 'Nenhum',
-                'duration_minutes': 8,
-                'calories_per_minute': 8.5,
-                'instructions': '1. Pés na largura dos ombros\n2. Desça flexionando quadril e joelhos\n3. Mantenha peito erguido\n4. Desça até coxas paralelas ao chão\n5. Empurre pelos calcanhares para subir'
+                'video_url': 'https://www.youtube.com/watch?v=zC3nLlEvin4'
             },
             {
-                'name': 'Lunges (Afundo)',
-                'description': 'Exercício unilateral que trabalha pernas e melhora equilíbrio.',
-                'muscle_group': 'legs',
-                'difficulty_level': 'beginner',
-                'equipment_needed': 'Nenhum',
-                'duration_minutes': 7,
-                'calories_per_minute': 7.8,
-                'instructions': '1. Em pé, dê um passo largo à frente\n2. Desça flexionando ambos os joelhos\n3. Joelho da frente não ultrapassa o pé\n4. Empurre para voltar à posição inicial\n5. Alterne as pernas'
-            },
-            {
-                'name': 'Agachamento Sumo',
-                'description': 'Variação que enfatiza glúteos e parte interna da coxa.',
-                'muscle_group': 'legs',
+                'name': 'Rosca Scott',
+                'description': 'Isolamento máximo de bíceps',
+                'muscle_group': 'arms',
                 'difficulty_level': 'intermediate',
-                'equipment_needed': 'Nenhum ou Halter',
+                'equipment_needed': 'Banco Scott, Barra W',
+                'instructions': 'Braços apoiados, flexione até contração máxima.',
                 'duration_minutes': 6,
-                'calories_per_minute': 8.2,
-                'instructions': '1. Pés mais largos que os ombros\n2. Pontas dos pés ligeiramente para fora\n3. Desça mantendo joelhos alinhados\n4. Mantenha tronco ereto\n5. Foque na contração dos glúteos'
+                'video_url': 'https://www.youtube.com/watch?v=fIWP-FRFNU0'
             },
             {
-                'name': 'Elevação de Panturrilha',
-                'description': 'Exercício específico para desenvolvimento das panturrilhas.',
-                'muscle_group': 'legs',
+                'name': 'Rosca Concentrada',
+                'description': 'Pico de contração no bíceps',
+                'muscle_group': 'arms',
                 'difficulty_level': 'beginner',
-                'equipment_needed': 'Nenhum',
+                'equipment_needed': 'Halter',
+                'instructions': 'Sentado, cotovelo apoiado, flexione.',
                 'duration_minutes': 5,
-                'calories_per_minute': 4.5,
-                'instructions': '1. Em pé, pés na largura dos ombros\n2. Levante-se na ponta dos pés\n3. Contraia as panturrilhas no topo\n4. Desça controladamente\n5. Pode usar parede para apoio'
+                'video_url': 'https://www.youtube.com/watch?v=Jvj2wV0vOYU'
+            },
+            {
+                'name': 'Tríceps Testa',
+                'description': 'Isolamento de tríceps deitado',
+                'muscle_group': 'arms',
+                'difficulty_level': 'intermediate',
+                'equipment_needed': 'Barra W',
+                'instructions': 'Deitado, desça barra até próximo à testa.',
+                'duration_minutes': 6,
+                'video_url': 'https://www.youtube.com/watch?v=d_KZxkY_0cM'
+            },
+            {
+                'name': 'Tríceps Pulley',
+                'description': 'Extensão de tríceps no cabo',
+                'muscle_group': 'arms',
+                'difficulty_level': 'beginner',
+                'equipment_needed': 'Polia alta',
+                'instructions': 'Empurre a barra para baixo estendendo cotovelos.',
+                'duration_minutes': 6,
+                'video_url': 'https://www.youtube.com/watch?v=2-LAMcpzODU'
+            },
+            {
+                'name': 'Tríceps Francês',
+                'description': 'Extensão acima da cabeça',
+                'muscle_group': 'arms',
+                'difficulty_level': 'intermediate',
+                'equipment_needed': 'Halter ou barra',
+                'instructions': 'Braços acima da cabeça, desça peso atrás.',
+                'duration_minutes': 6,
+                'video_url': 'https://www.youtube.com/watch?v=Zib6vB3zSLI'
+            },
+            {
+                'name': 'Tríceps Corda',
+                'description': 'Extensão com corda para maior amplitude',
+                'muscle_group': 'arms',
+                'difficulty_level': 'beginner',
+                'equipment_needed': 'Polia alta, Corda',
+                'instructions': 'Abra a corda na parte final do movimento.',
+                'duration_minutes': 6,
+                'video_url': 'https://www.youtube.com/watch?v=kiuVA0gs3EI'
+            },
+            {
+                'name': 'Mergulho no Banco',
+                'description': 'Tríceps com peso corporal',
+                'muscle_group': 'arms',
+                'difficulty_level': 'beginner',
+                'equipment_needed': 'Banco',
+                'instructions': 'Mãos no banco atrás de você, flexione cotovelos.',
+                'duration_minutes': 5,
+                'video_url': 'https://www.youtube.com/watch?v=0326dy_-CzM'
+            },
+            {
+                'name': 'Dips para Tríceps',
+                'description': 'Exercício avançado em barras paralelas',
+                'muscle_group': 'arms',
+                'difficulty_level': 'advanced',
+                'equipment_needed': 'Barras paralelas',
+                'instructions': 'Corpo vertical, desça flexionando cotovelos.',
+                'duration_minutes': 6,
+                'video_url': 'https://www.youtube.com/watch?v=yN6Q1UI_xkE'
+            },
+            {
+                'name': 'Rosca Inversa',
+                'description': 'Trabalha antebraços e braquial',
+                'muscle_group': 'arms',
+                'difficulty_level': 'beginner',
+                'equipment_needed': 'Barra',
+                'instructions': 'Pegada pronada, flexione cotovelos.',
+                'duration_minutes': 5,
+                'video_url': 'https://www.youtube.com/watch?v=nRiJVZDpdL0'
+            },
+            {
+                'name': 'Rosca Punho',
+                'description': 'Fortalecimento de antebraços',
+                'muscle_group': 'arms',
+                'difficulty_level': 'beginner',
+                'equipment_needed': 'Barra ou halteres',
+                'instructions': 'Antebraços apoiados, flexione apenas os punhos.',
+                'duration_minutes': 4,
+                'video_url': 'https://www.youtube.com/watch?v=28ttfDeVfqg'
+            },
+            {
+                'name': 'Kickback de Tríceps',
+                'description': 'Isolamento unilateral de tríceps',
+                'muscle_group': 'arms',
+                'difficulty_level': 'beginner',
+                'equipment_needed': 'Halter',
+                'instructions': 'Inclinado, estenda cotovelo para trás.',
+                'duration_minutes': 5,
+                'video_url': 'https://www.youtube.com/watch?v=6SS6K3lAwZ8'
+            },
+            {
+                'name': 'Close Grip Bench',
+                'description': 'Supino com pegada fechada para tríceps',
+                'muscle_group': 'arms',
+                'difficulty_level': 'intermediate',
+                'equipment_needed': 'Barra, Banco',
+                'instructions': 'Pegada mais estreita, desça controladamente.',
+                'duration_minutes': 7,
+                'video_url': 'https://www.youtube.com/watch?v=nEF0bv2FW94'
             },
 
-            # ABDÔMEN (ABS) - 12 exercícios
+            # ========================================
+            # ABDÔMEN/CORE (13 exercícios)
+            # ========================================
+            {
+                'name': 'Prancha Frontal',
+                'description': 'Isometria fundamental para core',
+                'muscle_group': 'abs',
+                'difficulty_level': 'beginner',
+                'equipment_needed': 'Nenhum',
+                'instructions': 'Corpo reto apoiado nos antebraços.',
+                'duration_minutes': 3,
+                'video_url': 'https://www.youtube.com/watch?v=ASdvN_XEl_c'
+            },
+            {
+                'name': 'Prancha Lateral',
+                'description': 'Trabalha oblíquos e estabilizadores',
+                'muscle_group': 'abs',
+                'difficulty_level': 'intermediate',
+                'equipment_needed': 'Nenhum',
+                'instructions': 'Apoiado em um antebraço, corpo lateral.',
+                'duration_minutes': 3,
+                'video_url': 'https://www.youtube.com/watch?v=K2VljzCC24Y'
+            },
             {
                 'name': 'Abdominal Tradicional',
-                'description': 'Exercício básico para fortalecimento do core.',
+                'description': 'Crunch básico',
                 'muscle_group': 'abs',
                 'difficulty_level': 'beginner',
                 'equipment_needed': 'Nenhum',
-                'duration_minutes': 5,
-                'calories_per_minute': 6.0,
-                'instructions': '1. Deite de costas, joelhos flexionados\n2. Mãos atrás da cabeça (sem puxar o pescoço)\n3. Contraia o abdômen levantando o tronco\n4. Expire na subida\n5. Desça controladamente'
+                'instructions': 'Deitado, flexione tronco em direção aos joelhos.',
+                'duration_minutes': 4,
+                'video_url': 'https://www.youtube.com/watch?v=Xyd_fa5zoEU'
             },
             {
-                'name': 'Prancha (Plank)',
-                'description': 'Exercício isométrico que fortalece todo o core.',
-                'muscle_group': 'abs',
-                'difficulty_level': 'beginner',
-                'equipment_needed': 'Nenhum',
-                'duration_minutes': 3,
-                'calories_per_minute': 5.5,
-                'instructions': '1. Posição de flexão apoiado nos antebraços\n2. Corpo em linha reta\n3. Contraia abdômen e glúteos\n4. Respire normalmente\n5. Mantenha a posição pelo tempo determinado'
-            },
-            {
-                'name': 'Bicicleta (Bicycle Crunch)',
-                'description': 'Exercício dinâmico que trabalha oblíquos e reto abdominal.',
+                'name': 'Abdominal Canivete',
+                'description': 'Trabalha reto abdominal completo',
                 'muscle_group': 'abs',
                 'difficulty_level': 'intermediate',
                 'equipment_needed': 'Nenhum',
+                'instructions': 'Deitado, eleve tronco e pernas simultaneamente.',
                 'duration_minutes': 5,
-                'calories_per_minute': 7.2,
-                'instructions': '1. Deite de costas, mãos atrás da cabeça\n2. Joelhos flexionados no ar\n3. Leve cotovelo direito ao joelho esquerdo\n4. Alterne os lados em movimento de pedalada\n5. Mantenha ritmo constante'
+                'video_url': 'https://www.youtube.com/watch?v=Ep5YN338XoY'
+            },
+            {
+                'name': 'Bicicleta',
+                'description': 'Trabalho dinâmico de oblíquos',
+                'muscle_group': 'abs',
+                'difficulty_level': 'beginner',
+                'equipment_needed': 'Nenhum',
+                'instructions': 'Alterne cotovelo com joelho oposto.',
+                'duration_minutes': 4,
+                'video_url': 'https://www.youtube.com/watch?v=9FGilxCbdz8'
             },
             {
                 'name': 'Elevação de Pernas',
-                'description': 'Foca na porção inferior do abdômen.',
+                'description': 'Foco em abdômen inferior',
                 'muscle_group': 'abs',
                 'difficulty_level': 'intermediate',
                 'equipment_needed': 'Nenhum',
+                'instructions': 'Deitado, eleve pernas estendidas até vertical.',
                 'duration_minutes': 4,
-                'calories_per_minute': 6.8,
-                'instructions': '1. Deite de costas, braços ao lado do corpo\n2. Pernas estendidas\n3. Levante as pernas até 90 graus\n4. Desça lentamente sem tocar o chão\n5. Mantenha lombar no chão'
+                'video_url': 'https://www.youtube.com/watch?v=JB2oyawG9KI'
             },
-
-            # CARDIO - 10 exercícios
             {
-                'name': 'Burpees',
-                'description': 'Exercício de alta intensidade que trabalha corpo inteiro.',
-                'muscle_group': 'cardio',
+                'name': 'Mountain Climber',
+                'description': 'Cardio integrado com core',
+                'muscle_group': 'abs',
+                'difficulty_level': 'intermediate',
+                'equipment_needed': 'Nenhum',
+                'instructions': 'Posição de prancha, alterne joelhos ao peito.',
+                'duration_minutes': 5,
+                'video_url': 'https://www.youtube.com/watch?v=nmwgirgXLYM'
+            },
+            {
+                'name': 'Russian Twist',
+                'description': 'Rotação para oblíquos',
+                'muscle_group': 'abs',
+                'difficulty_level': 'intermediate',
+                'equipment_needed': 'Peso opcional',
+                'instructions': 'Sentado, gire tronco de lado a lado.',
+                'duration_minutes': 4,
+                'video_url': 'https://www.youtube.com/watch?v=wkD8rjkodUI'
+            },
+            {
+                'name': 'Abdominal na Polia',
+                'description': 'Resistência progressiva',
+                'muscle_group': 'abs',
+                'difficulty_level': 'intermediate',
+                'equipment_needed': 'Polia alta, Corda',
+                'instructions': 'Ajoelhado, flexione tronco puxando cabo.',
+                'duration_minutes': 5,
+                'video_url': 'https://www.youtube.com/watch?v=C9lqnCrrowU'
+            },
+            {
+                'name': 'Dead Bug',
+                'description': 'Estabilização e coordenação',
+                'muscle_group': 'abs',
+                'difficulty_level': 'beginner',
+                'equipment_needed': 'Nenhum',
+                'instructions': 'Deitado, alterne braço e perna opostos.',
+                'duration_minutes': 4,
+                'video_url': 'https://www.youtube.com/watch?v=4XLEnwUr1d8'
+            },
+            {
+                'name': 'Hollow Body Hold',
+                'description': 'Isometria avançada',
+                'muscle_group': 'abs',
                 'difficulty_level': 'advanced',
                 'equipment_needed': 'Nenhum',
-                'duration_minutes': 4,
-                'calories_per_minute': 12.0,
-                'instructions': '1. Em pé, desça em agachamento\n2. Apoie as mãos no chão\n3. Salte as pernas para trás (posição flexão)\n4. Faça uma flexão (opcional)\n5. Volte ao agachamento e salte para cima'
+                'instructions': 'Corpo arqueado, braços e pernas elevados.',
+                'duration_minutes': 3,
+                'video_url': 'https://www.youtube.com/watch?v=LlDNef_Ztsc'
+            },
+            {
+                'name': 'V-Up',
+                'description': 'Movimento completo e dinâmico',
+                'muscle_group': 'abs',
+                'difficulty_level': 'advanced',
+                'equipment_needed': 'Nenhum',
+                'instructions': 'Forme V com o corpo tocando mãos nos pés.',
+                'duration_minutes': 5,
+                'video_url': 'https://www.youtube.com/watch?v=7UVgs18Y1P4'
+            },
+            {
+                'name': 'Pallof Press',
+                'description': 'Anti-rotação para core',
+                'muscle_group': 'abs',
+                'difficulty_level': 'intermediate',
+                'equipment_needed': 'Banda elástica ou cabo',
+                'instructions': 'Resista à rotação empurrando peso.',
+                'duration_minutes': 5,
+                'video_url': 'https://www.youtube.com/watch?v=AH_QZLm_0-s'
+            },
+
+            # ========================================
+            # CARDIO/CORPO INTEIRO (10 exercícios)
+            # ========================================
+            {
+                'name': 'Burpee Completo',
+                'description': 'Exercício metabólico explosivo',
+                'muscle_group': 'cardio',
+                'difficulty_level': 'intermediate',
+                'equipment_needed': 'Nenhum',
+                'instructions': 'Agache, prancha, flexão, salte.',
+                'duration_minutes': 6,
+                'video_url': 'https://www.youtube.com/watch?v=TU8QYVW0gDU'
             },
             {
                 'name': 'Jumping Jacks',
-                'description': 'Exercício cardiovascular clássico e eficiente.',
+                'description': 'Aquecimento e cardio leve',
                 'muscle_group': 'cardio',
                 'difficulty_level': 'beginner',
                 'equipment_needed': 'Nenhum',
+                'instructions': 'Salte abrindo pernas e braços.',
                 'duration_minutes': 5,
-                'calories_per_minute': 9.5,
-                'instructions': '1. Em pé, pés juntos, braços ao lado\n2. Salte abrindo pernas\n3. Simultaneamente levante braços acima da cabeça\n4. Salte voltando à posição inicial\n5. Mantenha ritmo constante'
+                'video_url': 'https://www.youtube.com/watch?v=c4DAnQ6DtF8'
             },
             {
-                'name': 'High Knees (Joelho Alto)',
-                'description': 'Corrida no lugar com elevação dos joelhos.',
+                'name': 'High Knees',
+                'description': 'Corrida estacionária intensa',
                 'muscle_group': 'cardio',
                 'difficulty_level': 'beginner',
                 'equipment_needed': 'Nenhum',
-                'duration_minutes': 3,
-                'calories_per_minute': 10.0,
-                'instructions': '1. Em pé, comece correndo no lugar\n2. Eleve os joelhos o máximo possível\n3. Tente tocar o peito com os joelhos\n4. Mantenha braços em movimento\n5. Ritmo acelerado'
+                'instructions': 'Eleve joelhos alternadamente em ritmo rápido.',
+                'duration_minutes': 5,
+                'video_url': 'https://www.youtube.com/watch?v=8opcQdC-V-U'
             },
             {
-                'name': 'Mountain Climbers',
-                'description': 'Exercício dinâmico que combina cardio e fortalecimento.',
+                'name': 'Corrida Esteira',
+                'description': 'Cardio clássico controlado',
+                'muscle_group': 'cardio',
+                'difficulty_level': 'beginner',
+                'equipment_needed': 'Esteira',
+                'instructions': 'Mantenha ritmo constante.',
+                'duration_minutes': 20,
+                'video_url': 'https://www.youtube.com/watch?v=brFHyOtTwH4'
+            },
+            {
+                'name': 'Bike Ergométrica',
+                'description': 'Cardio de baixo impacto',
+                'muscle_group': 'cardio',
+                'difficulty_level': 'beginner',
+                'equipment_needed': 'Bicicleta ergométrica',
+                'instructions': 'Pedale mantendo cadência adequada.',
+                'duration_minutes': 20,
+                'video_url': 'https://www.youtube.com/watch?v=79BPXWZy-vE'
+            },
+            {
+                'name': 'Pular Corda',
+                'description': 'Cardio intenso e coordenação',
                 'muscle_group': 'cardio',
                 'difficulty_level': 'intermediate',
-                'equipment_needed': 'Nenhum',
-                'duration_minutes': 4,
-                'calories_per_minute': 11.5,
-                'instructions': '1. Posição de prancha alta\n2. Traga um joelho em direção ao peito\n3. Retorne e alterne rapidamente\n4. Mantenha quadris estáveis\n5. Movimento rápido e controlado'
+                'equipment_needed': 'Corda',
+                'instructions': 'Salte ritmicamente girando a corda.',
+                'duration_minutes': 10,
+                'video_url': 'https://www.youtube.com/watch?v=FJmRQ5iTXKE'
             },
-
-            # CORPO INTEIRO (FULL_BODY) - 8 exercícios
             {
-                'name': 'Thruster com Halteres',
-                'description': 'Movimento composto que trabalha pernas, core e ombros.',
-                'muscle_group': 'full_body',
+                'name': 'Battle Rope',
+                'description': 'Ondulações para cardio e força',
+                'muscle_group': 'cardio',
                 'difficulty_level': 'intermediate',
-                'equipment_needed': 'Halteres',
+                'equipment_needed': 'Cordas battle rope',
+                'instructions': 'Crie ondas alternadas com as cordas.',
                 'duration_minutes': 8,
-                'calories_per_minute': 10.5,
-                'instructions': '1. Agachamento com halteres nos ombros\n2. Desça em agachamento completo\n3. Ao subir, empurre halteres acima da cabeça\n4. Movimento fluído e contínuo\n5. Combine força e cardio'
+                'video_url': 'https://www.youtube.com/watch?v=w8lorDQ55rU'
             },
             {
-                'name': 'Bear Crawl',
-                'description': 'Movimento animal que desafia coordenação e resistência.',
+                'name': 'Kettlebell Swing',
+                'description': 'Explosão e cardio combinados',
                 'muscle_group': 'full_body',
                 'difficulty_level': 'intermediate',
-                'equipment_needed': 'Nenhum',
-                'duration_minutes': 5,
-                'calories_per_minute': 8.8,
-                'instructions': '1. Posição quadrúpede, joelhos elevados\n2. Caminhe com mãos e pés\n3. Joelhos próximos ao chão\n4. Mantenha core ativo\n5. Movimento coordenado e controlado'
+                'equipment_needed': 'Kettlebell',
+                'instructions': 'Balance kettlebell usando quadril.',
+                'duration_minutes': 7,
+                'video_url': 'https://www.youtube.com/watch?v=YSxHifyI6s8'
             },
             {
-                'name': 'Turkish Get-Up',
-                'description': 'Movimento complexo de mobilidade e estabilidade.',
+                'name': 'Thruster',
+                'description': 'Agachamento com desenvolvimento',
                 'muscle_group': 'full_body',
                 'difficulty_level': 'advanced',
-                'equipment_needed': 'Halter ou Kettlebell',
+                'equipment_needed': 'Barra ou halteres',
+                'instructions': 'Agache e empurre peso acima da cabeça.',
+                'duration_minutes': 8,
+                'video_url': 'https://www.youtube.com/watch?v=L219ltL15zk'
+            },
+            {
+                'name': 'Man Maker',
+                'description': 'Combinação de movimentos complexos',
+                'muscle_group': 'full_body',
+                'difficulty_level': 'advanced',
+                'equipment_needed': 'Halteres',
+                'instructions': 'Burpee + remadas + thruster.',
                 'duration_minutes': 10,
-                'calories_per_minute': 7.5,
-                'instructions': '1. Deite com peso estendido acima\n2. Siga sequência específica para ficar em pé\n3. Mantenha peso sempre acima da cabeça\n4. Movimento lento e controlado\n5. Requer prática e coordenação'
-            }
+                'video_url': 'https://www.youtube.com/watch?v=4YoJE59uTJQ'
+            },
         ]
 
         # Criar exercícios

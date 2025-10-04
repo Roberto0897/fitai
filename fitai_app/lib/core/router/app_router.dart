@@ -135,18 +135,19 @@ class AppRouter {
       ),
 
       GoRoute(
-        path: AppRoutes.exerciseExecution,
-        name: 'exerciseExecution',
-        builder: (context, state) {
-          debugPrint('📱 ROUTER: Construindo ExerciseExecutionPage');
-          final params = state.extra as Map<String, dynamic>;
-          return ExerciseExecutionPage(
-            exercise: params['exercise'] as ExerciseModel,
-            totalExercises: params['totalExercises'] as int,
-            currentExerciseIndex: params['currentExerciseIndex'] as int,
-          );
-        },
-      ),
+      path: AppRoutes.exerciseExecution,
+      name: 'exerciseExecution',
+      builder: (context, state) {
+        debugPrint('📱 ROUTER: Construindo ExerciseExecutionPage');
+        final params = state.extra as Map<String, dynamic>;
+        return ExerciseExecutionPage(
+          exercise: params['exercise'] as ExerciseModel,
+          totalExercises: params['totalExercises'] as int,
+          currentExerciseIndex: params['currentExerciseIndex'] as int,
+          allExercises: params['allExercises'] as List<ExerciseModel>, // ADICIONE
+        );
+      },
+    ),
       
       GoRoute(
         path: AppRoutes.reports,
@@ -256,14 +257,14 @@ class AppRouter {
     }
   }
   
-  static void goToWorkoutDetail(WorkoutModel workout) {
-  try {
-    _router.push(AppRoutes.workoutDetail, extra: workout);
-    debugPrint('✅ Navegação para Workout Detail realizada');
-  } catch (e) {
-    debugPrint('❌ Erro ao navegar para Workout Detail: $e');
+  static void goToWorkoutDetail({required WorkoutModel workout}) {
+    try {
+      _router.push(AppRoutes.workoutDetail, extra: workout);
+      debugPrint('✅ Navegação para Workout Detail realizada - ID: ${workout.id}');
+    } catch (e) {
+      debugPrint('❌ Erro ao navegar para Workout Detail: $e');
+    }
   }
-}
   // Método para debug - verificar estado atual
   static Future<Map<String, dynamic>> getRouterDebugInfo() async {
     final currentLocation = _router.routerDelegate.currentConfiguration.uri.path;
@@ -276,25 +277,31 @@ class AppRouter {
       'isRedirecting': _isRedirecting,
     };
   }
-  static void goToExerciseExecution({
-  required ExerciseModel exercise,
-  required int totalExercises,
-  required int currentExerciseIndex,
-}) {
-  try {
-    _router.push(
-      AppRoutes.exerciseExecution,
-      extra: {
-        'exercise': exercise,
-        'totalExercises': totalExercises,
-        'currentExerciseIndex': currentExerciseIndex,
-      },
-    );
-    debugPrint('✅ Navegação para Exercise Execution realizada');
-  } catch (e) {
-    debugPrint('❌ Erro ao navegar para Exercise Execution: $e');
+   static void goToExerciseExecution({
+    required ExerciseModel exercise,
+    required int totalExercises,
+    required int currentExerciseIndex,
+    required List<ExerciseModel> allExercises,
+    int initialWorkoutSeconds = 0,
+    bool isFullWorkout = false, // NOVO PARÂMETRO
+  }) {
+    try {
+      _router.push(
+        AppRoutes.exerciseExecution,
+        extra: {
+          'exercise': exercise,
+          'totalExercises': totalExercises,
+          'currentExerciseIndex': currentExerciseIndex,
+          'allExercises': allExercises,
+          'initialWorkoutSeconds': initialWorkoutSeconds,
+          'isFullWorkout': isFullWorkout, // NOVO
+        },
+      );
+      debugPrint('✅ Navegação para Exercise Execution realizada (isFullWorkout: $isFullWorkout)');
+    } catch (e) {
+      debugPrint('❌ Erro ao navegar para Exercise Execution: $e');
+    }
   }
-}
 static void goToReports() {
     try {
       _router.go(AppRoutes.reports);

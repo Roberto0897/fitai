@@ -3,12 +3,12 @@ Serializers para treinos
 """
 from rest_framework import serializers
 from .models import Workout, WorkoutExercise, WorkoutSession
-from apps.exercises.serializers import ExerciseListSerializer
+from apps.exercises.serializers import ExerciseSerializer  # ← MUDOU AQUI
 
 
 class WorkoutExerciseSerializer(serializers.ModelSerializer):
     """Serializer para exercícios dentro do treino"""
-    exercise = ExerciseListSerializer(read_only=True)
+    exercise = ExerciseSerializer(read_only=True)  # ← MUDOU AQUI
     
     class Meta:
         model = WorkoutExercise
@@ -29,7 +29,6 @@ class WorkoutListSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = Workout
-        # ✅ Nomes corretos dos campos do modelo
         fields = [
             'id', 'nome', 'categoria', 'tipo_treino', 'nivel_dificuldade', 
             'duracao_estimada', 'calorias_estimadas', 'popularidade'

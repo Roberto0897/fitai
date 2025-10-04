@@ -122,7 +122,12 @@ def workout_detail(request, workout_id):
                     'name': we.exercise.name,
                     'description': we.exercise.description,
                     'muscle_group': we.exercise.muscle_group,
-                    'instructions': we.exercise.instructions
+                    'difficulty_level': we.exercise.difficulty_level, 
+                    'equipment_needed': we.exercise.equipment_needed, 
+                    'duration_minutes': we.exercise.duration_minutes,  
+                    'calories_per_minute': we.exercise.calories_per_minute, 
+                    'instructions': we.exercise.instructions,
+                    'video_url': we.exercise.video_url, 
                 },
                 'sets': we.sets,
                 'reps': we.reps,
@@ -867,3 +872,4 @@ def generate_ai_workout_plan(request):
     except UserProfile.DoesNotExist:
         return Response({"error": "Perfil de usuário não encontrado"}, 
                        status=status.HTTP_404_NOT_FOUND)
+    

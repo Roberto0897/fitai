@@ -317,7 +317,7 @@ Widget build(BuildContext context) {
                   calories: 320,
                 );
                 
-                AppRouter.goToWorkoutDetail(workout);
+                AppRouter.goToWorkoutDetail(workout: workout);
               },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF00BCD4),
