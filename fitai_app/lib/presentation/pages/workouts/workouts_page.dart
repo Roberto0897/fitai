@@ -3,6 +3,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/router/app_router.dart';
 import '../../../service/api_service.dart';
 import 'workout_detail_page.dart';
+import 'create_workout_page.dart';
 
 class WorkoutsPage extends StatefulWidget {
   const WorkoutsPage({super.key});
@@ -37,12 +38,10 @@ class _WorkoutsPageState extends State<WorkoutsPage> with TickerProviderStateMix
       setState(() {});
     });
     
-    // Carregar dados da API
     _loadWorkoutsFromAPI();
     _loadExercisesFromAPI();
   }
 
-  // Carrega treinos do Django
   Future<void> _loadWorkoutsFromAPI() async {
     setState(() {
       _isLoadingWorkouts = true;
@@ -60,7 +59,7 @@ class _WorkoutsPageState extends State<WorkoutsPage> with TickerProviderStateMix
             name: workout['name'] ?? 'Sem nome',
             description: workout['description'] ?? '',
             duration: workout['estimated_duration'] ?? 0,
-            exercises: 0, // Django não retorna na lista
+            exercises: 0,
             difficulty: _mapDifficulty(workout['difficulty_level']),
             category: _mapCategory(workout['workout_type']),
             calories: workout['calories_estimate'] ?? 0,
@@ -81,7 +80,6 @@ class _WorkoutsPageState extends State<WorkoutsPage> with TickerProviderStateMix
     }
   }
 
-  // Carrega exercícios do Django
   Future<void> _loadExercisesFromAPI() async {
     setState(() {
       _isLoadingExercises = true;
@@ -100,7 +98,7 @@ class _WorkoutsPageState extends State<WorkoutsPage> with TickerProviderStateMix
             muscleGroup: _mapMuscleGroup(exercise['muscle_group']),
             difficulty: _mapDifficulty(exercise['difficulty_level']),
             equipment: exercise['equipment_needed'] ?? 'Não especificado',
-            series: '3', // Padrão
+            series: '3',
           );
         }).toList();
         _isLoadingExercises = false;
@@ -116,7 +114,6 @@ class _WorkoutsPageState extends State<WorkoutsPage> with TickerProviderStateMix
     }
   }
 
-  // Mapeia difficulty_level do Django para português
   String _mapDifficulty(String? difficulty) {
     switch (difficulty?.toLowerCase()) {
       case 'beginner':
@@ -130,7 +127,6 @@ class _WorkoutsPageState extends State<WorkoutsPage> with TickerProviderStateMix
     }
   }
 
-  // Mapeia workout_type do Django para português
   String _mapCategory(String? type) {
     switch (type?.toLowerCase()) {
       case 'strength':
@@ -148,7 +144,6 @@ class _WorkoutsPageState extends State<WorkoutsPage> with TickerProviderStateMix
     }
   }
 
-  // Mapeia muscle_group do Django para português
   String _mapMuscleGroup(String? group) {
     switch (group?.toLowerCase()) {
       case 'chest':
@@ -200,6 +195,14 @@ class _WorkoutsPageState extends State<WorkoutsPage> with TickerProviderStateMix
           ],
         ),
       ),
+      floatingActionButton: _tabController.index == 2
+          ? FloatingActionButton.extended(
+              onPressed: _createNewWorkout,
+              backgroundColor: AppColors.primary,
+              icon: const Icon(Icons.add),
+              label: const Text('Criar Treino'),
+            )
+          : null,
     );
   }
 
@@ -504,26 +507,213 @@ class _WorkoutsPageState extends State<WorkoutsPage> with TickerProviderStateMix
     );
   }
 
+  // NOVO: Aba Meus Treinos com FutureBuilder
   Widget _buildMyWorkouts() {
-    return const Center(
+  return FutureBuilder<Map<String, dynamic>>(
+    // ✅ Melhor: use o método específico que já retorna o tipo correto
+    future: ApiService.getMyWorkouts(),
+    builder: (context, snapshot) {
+      if (snapshot.connectionState == ConnectionState.waiting) {
+        return const Center(
+          child: CircularProgressIndicator(color: AppColors.primary),
+        );
+      }
+
+      if (snapshot.hasError) {
+        return Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error_outline, size: 64, color: Colors.red),
+              const SizedBox(height: 16),
+              Text(
+                'Erro ao carregar treinos: ${snapshot.error}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: () {
+                  setState(() {});
+                },
+                child: const Text('Tentar Novamente'),
+              ),
+            ],
+          ),
+        );
+      }
+
+      final data = snapshot.data;
+      if (data == null || data['my_workouts'] == null) {
+        return _buildEmptyMyWorkouts();
+      }
+
+      final myWorkouts = (data['my_workouts'] as List)
+          .map((w) => WorkoutModel(
+                id: w['id'],
+                name: w['name'],
+                description: w['description'],
+                duration: w['estimated_duration'] ?? 30,
+                exercises: w['exercise_count'] ?? 0,
+                difficulty: _mapDifficulty(w['difficulty_level']),
+                category: _mapCategory(w['workout_type']),
+                calories: w['calories_estimate'] ?? 0,
+                isRecommended: false,
+              ))
+          .toList();
+
+      if (myWorkouts.isEmpty) {
+        return _buildEmptyMyWorkouts();
+      }
+
+      return RefreshIndicator(
+        onRefresh: () async {
+          setState(() {});
+        },
+        color: AppColors.primary,
+        child: ListView.builder(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          itemCount: myWorkouts.length,
+          itemBuilder: (context, index) {
+            final workout = myWorkouts[index];
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: _MyWorkoutCard(
+                workout: workout,
+                onTap: () => _openWorkoutDetail(workout),
+                onEdit: () => _editWorkout(workout),
+                onDelete: () => _deleteWorkout(workout),
+              ),
+            );
+          },
+        ),
+      );
+    },
+  );
+}
+
+  Widget _buildEmptyMyWorkouts() {
+    return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.fitness_center, size: 64, color: AppColors.textHint),
-          SizedBox(height: 16),
-          Text(
-            'Seus treinos personalizados',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.add_circle_outline,
+              size: 64,
+              color: AppColors.primary,
+            ),
           ),
-          SizedBox(height: 8),
-          Text(
-            'Funcionalidade em desenvolvimento',
+          const SizedBox(height: 24),
+          const Text(
+            'Nenhum treino personalizado',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Crie treinos personalizados com\nseus exercícios favoritos',
             textAlign: TextAlign.center,
-            style: TextStyle(color: AppColors.textSecondary),
+            style: TextStyle(
+              fontSize: 14,
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton.icon(
+            onPressed: _createNewWorkout,
+            icon: const Icon(Icons.add),
+            label: const Text('Criar Primeiro Treino'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
           ),
         ],
       ),
     );
+  }
+
+  void _createNewWorkout() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const CreateWorkoutPage(),
+      ),
+    ).then((_) => setState(() {}));
+  }
+
+  void _editWorkout(WorkoutModel workout) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Funcionalidade de edição em desenvolvimento'),
+        backgroundColor: AppColors.primary,
+      ),
+    );
+  }
+
+  Future<void> _deleteWorkout(WorkoutModel workout) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text('Excluir Treino', style: TextStyle(color: Colors.white)),
+        content: Text(
+          'Tem certeza que deseja excluir "${workout.name}"?\nEsta ação não pode ser desfeita.',
+          style: const TextStyle(color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: AppColors.error),
+            child: const Text('Excluir'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      await ApiService.delete('/workouts/${workout.id}/delete/');
+      
+      if (!mounted) return;
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Treino "${workout.name}" excluído'),
+          backgroundColor: AppColors.primary,
+        ),
+      );
+      
+      setState(() {});
+      
+    } catch (e) {
+      if (!mounted) return;
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erro ao excluir: $e'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
   }
 
   Widget _buildExercisesTab() {
@@ -632,7 +822,6 @@ class _WorkoutsPageState extends State<WorkoutsPage> with TickerProviderStateMix
   void _openWorkoutDetail(WorkoutModel workout) {
     print('🎯 Navegando para treino ID: ${workout.id} - ${workout.name}');
     
-    // Navega para a página de detalhes passando o workout
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -675,8 +864,7 @@ class _WorkoutsPageState extends State<WorkoutsPage> with TickerProviderStateMix
   }
 }
 
-// Restante dos widgets (FilterDropdown, WorkoutCard, ExerciseListCard, etc.)
-// mantém igual ao código original...
+// Widgets auxiliares
 
 class _FilterDropdown extends StatelessWidget {
   final String label;
@@ -792,6 +980,154 @@ class WorkoutCard extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+         Icon(icon, size: 14, color: AppColors.primary),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 12,
+              color: AppColors.textSecondary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Widget para card de treino personalizado
+class _MyWorkoutCard extends StatelessWidget {
+  final WorkoutModel workout;
+  final VoidCallback onTap;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+
+  const _MyWorkoutCard({
+    required this.workout,
+    required this.onTap,
+    required this.onEdit,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: AppColors.primary.withValues(alpha: 0.3),
+            width: 1,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.star,
+                    size: 16,
+                    color: AppColors.primary,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Text(
+                  'MEU TREINO',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.primary,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const Spacer(),
+                PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_vert, color: AppColors.textSecondary),
+                  color: AppColors.surface,
+                  onSelected: (value) {
+                    if (value == 'edit') onEdit();
+                    if (value == 'delete') onDelete();
+                  },
+                  itemBuilder: (context) => [
+                    const PopupMenuItem(
+                      value: 'edit',
+                      child: Row(
+                        children: [
+                          Icon(Icons.edit, size: 18, color: AppColors.primary),
+                          SizedBox(width: 8),
+                          Text('Editar'),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 'delete',
+                      child: Row(
+                        children: [
+                          Icon(Icons.delete, size: 18, color: AppColors.error),
+                          SizedBox(width: 8),
+                          Text('Excluir', style: TextStyle(color: AppColors.error)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              workout.name,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              workout.description,
+              style: const TextStyle(
+                fontSize: 14,
+                color: AppColors.textSecondary,
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                _buildChip(Icons.schedule, '${workout.duration} min'),
+                const SizedBox(width: 8),
+                _buildChip(Icons.fitness_center, '${workout.exercises} ex'),
+                const SizedBox(width: 8),
+                _buildChip(Icons.bar_chart, workout.difficulty),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildChip(IconData icon, String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppColors.card,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
           Icon(icon, size: 14, color: AppColors.primary),
           const SizedBox(width: 4),
           Text(
@@ -886,38 +1222,7 @@ class _ExerciseListCard extends StatelessWidget {
   }
 }
 
-class _MetricChip extends StatelessWidget {
-  final IconData icon;
-  final String label;
-
-  const _MetricChip({required this.icon, required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: AppColors.card,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 12, color: AppColors.textSecondary),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 10,
-              color: AppColors.textSecondary,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
+// Modelos
 class WorkoutModel {
   final int id;
   final String name;

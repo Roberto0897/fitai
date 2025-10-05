@@ -28,5 +28,17 @@ urlpatterns = [
     path('analytics/', views.user_analytics, name='user_analytics'),
     path('ai/exercise-recommendations/', views.ai_exercise_recommendations, name='ai_exercise_recommendations'),
     path('ai/generate-workout/', views.generate_ai_workout_plan, name='generate_ai_workout_plan'),
+
+    # APIs de Treinos Personalizados
+    path('workouts/my-workouts/', views.my_personalized_workouts, name='my_personalized_workouts'),
+    path('workouts/create/', views.create_personalized_workout, name='create_personalized_workout'),
+    path('workouts/<int:workout_id>/update/', views.update_personalized_workout, name='update_personalized_workout'),
+    path('workouts/<int:workout_id>/delete/', views.delete_personalized_workout, name='delete_personalized_workout'),
+    path('workouts/<int:workout_id>/duplicate/', views.duplicate_workout, name='duplicate_workout'),
+
+    # Gerenciar exercícios no treino personalizado
+    path('workouts/<int:workout_id>/exercises/add/', views.add_exercise_to_workout, name='add_exercise_to_workout'),
+    path('workouts/<int:workout_id>/exercises/<int:workout_exercise_id>/update/', views.update_exercise_in_workout, name='update_exercise_in_workout'),
+    path('workouts/<int:workout_id>/exercises/<int:workout_exercise_id>/delete/', views.remove_exercise_from_workout, name='remove_exercise_from_workout'),
     
 ]

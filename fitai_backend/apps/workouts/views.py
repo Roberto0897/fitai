@@ -873,3 +873,342 @@ def generate_ai_workout_plan(request):
         return Response({"error": "Perfil de usuário não encontrado"}, 
                        status=status.HTTP_404_NOT_FOUND)
     
+# criar treinos
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def my_personalized_workouts(request):
+    """Lista apenas treinos personalizados criados pelo usuário"""
+    workouts = Workout.objects.filter(
+        is_personalized=True,
+        created_by_user=request.user
+    ).order_by('-created_at')
+    
+    data = []
+    for workout in workouts:
+        exercise_count = WorkoutExercise.objects.filter(workout=workout).count()
+        data.append({
+            'id': workout.id,
+            'name': workout.name,
+            'description': workout.description,
+            'difficulty_level': workout.difficulty_level,
+            'estimated_duration': workout.estimated_duration,
+            'target_muscle_groups': workout.target_muscle_groups,
+            'equipment_needed': workout.equipment_needed,
+            'calories_estimate': workout.calories_estimate,
+            'workout_type': workout.workout_type,
+            'exercise_count': exercise_count,
+            'is_personalized': workout.is_personalized,
+            'created_at': workout.created_at
+        })
+    
+    return Response({
+        'my_workouts': data,
+        'total': len(data)
+    })
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_personalized_workout(request):
+    """Cria um novo treino personalizado"""
+    name = request.data.get('name')
+    description = request.data.get('description')
+    difficulty_level = request.data.get('difficulty_level', 'beginner')
+    estimated_duration = request.data.get('estimated_duration', 30)
+    target_muscle_groups = request.data.get('target_muscle_groups', '')
+    equipment_needed = request.data.get('equipment_needed', '')
+    calories_estimate = request.data.get('calories_estimate', 0)
+    workout_type = request.data.get('workout_type', 'strength')
+    
+    # Validações
+    if not name or not description:
+        return Response(
+            {"error": "Nome e descrição são obrigatórios"},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    # Criar treino
+    workout = Workout.objects.create(
+        name=name,
+        description=description,
+        difficulty_level=difficulty_level,
+        estimated_duration=estimated_duration,
+        target_muscle_groups=target_muscle_groups,
+        equipment_needed=equipment_needed,
+        calories_estimate=calories_estimate,
+        workout_type=workout_type,
+        is_personalized=True,
+        created_by_user=request.user,
+        is_recommended=False
+    )
+    
+    return Response({
+        'message': 'Treino criado com sucesso',
+        'workout': {
+            'id': workout.id,
+            'name': workout.name,
+            'description': workout.description,
+            'difficulty_level': workout.difficulty_level,
+            'estimated_duration': workout.estimated_duration,
+            'workout_type': workout.workout_type,
+            'is_personalized': workout.is_personalized
+        }
+    }, status=status.HTTP_201_CREATED)
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def update_personalized_workout(request, workout_id):
+    """Atualiza treino personalizado (apenas do próprio usuário)"""
+    try:
+        workout = Workout.objects.get(id=workout_id)
+        
+        # Verificar permissão
+        if not workout.is_personalized or workout.created_by_user != request.user:
+            return Response(
+                {"error": "Você não tem permissão para editar este treino"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Atualizar campos fornecidos
+        workout.name = request.data.get('name', workout.name)
+        workout.description = request.data.get('description', workout.description)
+        workout.difficulty_level = request.data.get('difficulty_level', workout.difficulty_level)
+        workout.estimated_duration = request.data.get('estimated_duration', workout.estimated_duration)
+        workout.target_muscle_groups = request.data.get('target_muscle_groups', workout.target_muscle_groups)
+        workout.equipment_needed = request.data.get('equipment_needed', workout.equipment_needed)
+        workout.calories_estimate = request.data.get('calories_estimate', workout.calories_estimate)
+        workout.workout_type = request.data.get('workout_type', workout.workout_type)
+        workout.save()
+        
+        return Response({
+            'message': 'Treino atualizado com sucesso',
+            'workout': {
+                'id': workout.id,
+                'name': workout.name,
+                'description': workout.description
+            }
+        })
+        
+    except Workout.DoesNotExist:
+        return Response(
+            {"error": "Treino não encontrado"},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def delete_personalized_workout(request, workout_id):
+    """Deleta treino personalizado (apenas do próprio usuário)"""
+    try:
+        workout = Workout.objects.get(id=workout_id)
+        
+        # Verificar permissão
+        if not workout.is_personalized or workout.created_by_user != request.user:
+            return Response(
+                {"error": "Você não tem permissão para deletar este treino"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        workout_name = workout.name
+        workout.delete()
+        
+        return Response({
+            'message': f'Treino "{workout_name}" deletado com sucesso'
+        })
+        
+    except Workout.DoesNotExist:
+        return Response(
+            {"error": "Treino não encontrado"},
+            status=status.HTTP_404_NOT_FOUND
+        )
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def add_exercise_to_workout(request, workout_id):
+    """Adiciona exercício ao treino personalizado"""
+    try:
+        workout = Workout.objects.get(id=workout_id)
+        
+        # Verificar permissão
+        if not workout.is_personalized or workout.created_by_user != request.user:
+            return Response(
+                {"error": "Você só pode adicionar exercícios aos seus treinos"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        exercise_id = request.data.get('exercise_id')
+        sets = request.data.get('sets', 3)
+        reps = request.data.get('reps', '10')
+        weight = request.data.get('weight')
+        rest_time = request.data.get('rest_time', 60)
+        order_in_workout = request.data.get('order_in_workout', 1)
+        notes = request.data.get('notes', '')
+        
+        if not exercise_id:
+            return Response(
+                {"error": "exercise_id é obrigatório"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        exercise = Exercise.objects.get(id=exercise_id)
+        
+        # Criar WorkoutExercise
+        workout_exercise = WorkoutExercise.objects.create(
+            workout=workout,
+            exercise=exercise,
+            sets=sets,
+            reps=reps,
+            weight=weight,
+            rest_time=rest_time,
+            order_in_workout=order_in_workout,
+            notes=notes
+        )
+        
+        return Response({
+            'message': 'Exercício adicionado com sucesso',
+            'workout_exercise': {
+                'id': workout_exercise.id,
+                'exercise_name': exercise.name,
+                'sets': workout_exercise.sets,
+                'reps': workout_exercise.reps,
+                'order': workout_exercise.order_in_workout
+            }
+        }, status=status.HTTP_201_CREATED)
+        
+    except Workout.DoesNotExist:
+        return Response({"error": "Treino não encontrado"}, status=status.HTTP_404_NOT_FOUND)
+    except Exercise.DoesNotExist:
+        return Response({"error": "Exercício não encontrado"}, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def update_exercise_in_workout(request, workout_id, workout_exercise_id):
+    """Atualiza configurações de um exercício no treino"""
+    try:
+        workout = Workout.objects.get(id=workout_id)
+        
+        # Verificar permissão
+        if not workout.is_personalized or workout.created_by_user != request.user:
+            return Response(
+                {"error": "Você não tem permissão para editar este treino"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        workout_exercise = WorkoutExercise.objects.get(
+            id=workout_exercise_id,
+            workout=workout
+        )
+        
+        # Atualizar campos fornecidos
+        if 'sets' in request.data:
+            workout_exercise.sets = request.data['sets']
+        if 'reps' in request.data:
+            workout_exercise.reps = request.data['reps']
+        if 'weight' in request.data:
+            workout_exercise.weight = request.data['weight']
+        if 'rest_time' in request.data:
+            workout_exercise.rest_time = request.data['rest_time']
+        if 'order_in_workout' in request.data:
+            workout_exercise.order_in_workout = request.data['order_in_workout']
+        if 'notes' in request.data:
+            workout_exercise.notes = request.data['notes']
+        
+        workout_exercise.save()
+        
+        return Response({
+            'message': 'Exercício atualizado com sucesso',
+            'workout_exercise': {
+                'id': workout_exercise.id,
+                'sets': workout_exercise.sets,
+                'reps': workout_exercise.reps,
+                'weight': workout_exercise.weight
+            }
+        })
+        
+    except Workout.DoesNotExist:
+        return Response({"error": "Treino não encontrado"}, status=status.HTTP_404_NOT_FOUND)
+    except WorkoutExercise.DoesNotExist:
+        return Response({"error": "Exercício no treino não encontrado"}, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def remove_exercise_from_workout(request, workout_id, workout_exercise_id):
+    """Remove exercício do treino"""
+    try:
+        workout = Workout.objects.get(id=workout_id)
+        
+        # Verificar permissão
+        if not workout.is_personalized or workout.created_by_user != request.user:
+            return Response(
+                {"error": "Você não tem permissão para editar este treino"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        workout_exercise = WorkoutExercise.objects.get(
+            id=workout_exercise_id,
+            workout=workout
+        )
+        
+        exercise_name = workout_exercise.exercise.name
+        workout_exercise.delete()
+        
+        return Response({
+            'message': f'Exercício "{exercise_name}" removido do treino'
+        })
+        
+    except Workout.DoesNotExist:
+        return Response({"error": "Treino não encontrado"}, status=status.HTTP_404_NOT_FOUND)
+    except WorkoutExercise.DoesNotExist:
+        return Response({"error": "Exercício no treino não encontrado"}, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def duplicate_workout(request, workout_id):
+    """Duplica um treino (catálogo ou próprio) para criar versão personalizada"""
+    try:
+        original_workout = Workout.objects.get(id=workout_id)
+        
+        # Criar cópia
+        new_workout = Workout.objects.create(
+            name=f"{original_workout.name} (Cópia)",
+            description=original_workout.description,
+            difficulty_level=original_workout.difficulty_level,
+            estimated_duration=original_workout.estimated_duration,
+            target_muscle_groups=original_workout.target_muscle_groups,
+            equipment_needed=original_workout.equipment_needed,
+            calories_estimate=original_workout.calories_estimate,
+            workout_type=original_workout.workout_type,
+            is_personalized=True,
+            created_by_user=request.user,
+            is_recommended=False
+        )
+        
+        # Copiar todos os exercícios
+        for workout_exercise in WorkoutExercise.objects.filter(workout=original_workout):
+            WorkoutExercise.objects.create(
+                workout=new_workout,
+                exercise=workout_exercise.exercise,
+                sets=workout_exercise.sets,
+                reps=workout_exercise.reps,
+                weight=workout_exercise.weight,
+                rest_time=workout_exercise.rest_time,
+                order_in_workout=workout_exercise.order_in_workout,
+                notes=workout_exercise.notes
+            )
+        
+        exercise_count = WorkoutExercise.objects.filter(workout=new_workout).count()
+        
+        return Response({
+            'message': 'Treino duplicado com sucesso',
+            'workout': {
+                'id': new_workout.id,
+                'name': new_workout.name,
+                'description': new_workout.description,
+                'exercise_count': exercise_count,
+                'is_personalized': new_workout.is_personalized
+            }
+        }, status=status.HTTP_201_CREATED)
+        
+    except Workout.DoesNotExist:
+        return Response({"error": "Treino não encontrado"}, status=status.HTTP_404_NOT_FOUND)
+    

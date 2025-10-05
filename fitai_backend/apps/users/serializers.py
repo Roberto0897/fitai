@@ -112,3 +112,26 @@ class UserProgressListSerializer(serializers.ModelSerializer):
             'id', 'username', 'total_workouts', 'current_streak',
             'calories_burned', 'last_workout'
         ]
+
+
+#inserido 05/10
+class UserProfileSimpleSerializer(serializers.ModelSerializer):
+    """Serializer alinhado com o modelo REAL"""
+    username = serializers.CharField(source='user.username', read_only=True)
+    email = serializers.CharField(source='user.email', read_only=True)
+    
+    class Meta:
+        model = UserProfile
+        fields = [
+            'id', 'user', 'username', 'email',
+            'goal', 'activity_level', 'focus_areas', 'bio',
+            'current_weight', 'target_weight'
+        ]
+
+class UserProgressSimpleSerializer(serializers.ModelSerializer):
+    """Serializer alinhado com o modelo REAL"""
+    username = serializers.CharField(source='user.username', read_only=True)
+    
+    class Meta:
+        model = UserProgress
+        fields = ['id', 'user', 'username', 'total_workouts']

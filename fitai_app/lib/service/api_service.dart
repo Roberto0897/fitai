@@ -293,6 +293,13 @@ class ApiService {
     return await get('/users/dashboard/');
   }
   
+   /// Busca o perfil completo do usuário (substitui o dashboard) //NOVO 04/10 /17:07
+  static Future<Map<String, dynamic>> getUserProfile() async {
+    // Usamos o endpoint que mapeamos no Django para o UserProfileUpdateView
+    // O Django usa o token para saber qual perfil retornar
+    return await get('/users/profile/'); 
+  }
+
   /// Progresso do usuário
   static Future<Map<String, dynamic>> getUserProgress() async {
     return await get('/users/progress/');
@@ -330,6 +337,81 @@ class ApiService {
     });
   }
   
+  /// Listar apenas MEUS treinos personalizados
+static Future<Map<String, dynamic>> getMyWorkouts() async {
+  return await get('/workouts/my-workouts/');
+}
+
+/// Criar novo treino personalizado
+static Future<Map<String, dynamic>> createWorkout({
+  required String name,
+  required String description,
+  String? difficultyLevel,
+  int? estimatedDuration,
+  String? targetMuscleGroups,
+  String? equipmentNeeded,
+  int? caloriesEstimate,
+  String? workoutType,
+}) async {
+  return await post('/workouts/create/', {
+    'name': name,
+    'description': description,
+    if (difficultyLevel != null) 'difficulty_level': difficultyLevel,
+    if (estimatedDuration != null) 'estimated_duration': estimatedDuration,
+    if (targetMuscleGroups != null) 'target_muscle_groups': targetMuscleGroups,
+    if (equipmentNeeded != null) 'equipment_needed': equipmentNeeded,
+    if (caloriesEstimate != null) 'calories_estimate': caloriesEstimate,
+    if (workoutType != null) 'workout_type': workoutType,
+  });
+}
+
+  /// Atualizar treino personalizado
+  static Future<Map<String, dynamic>> updateWorkout(
+    int workoutId,
+    Map<String, dynamic> data,
+  ) async {
+    return await put('/workouts/$workoutId/update/', data);
+  }
+
+  /// Deletar treino personalizado
+  static Future<Map<String, dynamic>> deleteWorkout(int workoutId) async {
+    return await delete('/workouts/$workoutId/delete/');
+  }
+
+  /// Adicionar exercício ao treino
+  static Future<Map<String, dynamic>> addExerciseToWorkout({
+    required int workoutId,
+    required int exerciseId,
+    int sets = 3,
+    String reps = '10',
+    double? weight,
+    int restTime = 60,
+    int orderInWorkout = 1,
+    String? notes,
+  }) async {
+    return await post('/workouts/$workoutId/exercises/add/', {
+      'exercise_id': exerciseId,
+      'sets': sets,
+      'reps': reps,
+      if (weight != null) 'weight': weight,
+      'rest_time': restTime,
+      'order_in_workout': orderInWorkout,
+      if (notes != null) 'notes': notes,
+    });
+  }
+
+  /// Remover exercício do treino
+  static Future<Map<String, dynamic>> removeExerciseFromWorkout({
+    required int workoutId,
+    required int workoutExerciseId,
+  }) async {
+    return await delete('/workouts/$workoutId/exercises/$workoutExerciseId/delete/');
+  }
+
+  /// Duplicar treino (criar cópia personalizada)
+  static Future<Map<String, dynamic>> duplicateWorkout(int workoutId) async {
+    return await post('/workouts/$workoutId/duplicate/', {});
+}
   // ============================================================
   // TESTE DE CONEXÃO
   // ============================================================
@@ -363,6 +445,8 @@ class ApiException implements Exception {
   
   @override
   String toString() => 'ApiException($statusCode): $message';
+
+  
 
   
 }

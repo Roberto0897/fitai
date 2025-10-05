@@ -58,6 +58,7 @@ dependencies:
   url_launcher: ^6.3.1
   url_launcher_web: ^2.3.3
   youtube_player_iframe: ^5.1.2
+  provider: ^6.1.1
   
   
 
