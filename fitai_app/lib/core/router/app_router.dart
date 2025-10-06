@@ -284,6 +284,8 @@ class AppRouter {
     required List<ExerciseModel> allExercises,
     int initialWorkoutSeconds = 0,
     bool isFullWorkout = false, // NOVO PARÂMETRO
+    int? sessionId,        //  NOVO
+    int? workoutId, 
   }) {
     try {
       _router.push(
@@ -295,6 +297,8 @@ class AppRouter {
           'allExercises': allExercises,
           'initialWorkoutSeconds': initialWorkoutSeconds,
           'isFullWorkout': isFullWorkout, // NOVO
+          'sessionId': sessionId,        //  NOVO
+          'workoutId': workoutId,
         },
       );
       debugPrint('✅ Navegação para Exercise Execution realizada (isFullWorkout: $isFullWorkout)');

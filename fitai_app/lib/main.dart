@@ -8,6 +8,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'firebase_options.dart';
 import 'package:provider/provider.dart';
 import 'providers/user_profile_provider.dart';
+import 'providers/reports_provider.dart';
+import 'package:fitai_app/service/chat_service.dart';
+
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -57,8 +60,14 @@ class FitAIApp extends StatelessWidget {
           create: (_) => UserProfileProvider(),
           lazy: false, // Carrega imediatamente
         ),
-        // Adicione outros providers aqui no futuro:
-        // ChangeNotifierProvider(create: (_) => WorkoutProvider()),
+        ChangeNotifierProvider(
+          create: (_) => ReportsProvider(), // ← ADICIONE ESTA LINHA
+          lazy: false,
+        ),
+        ChangeNotifierProvider(
+          create: (_) => ChatService(), // ← ADICIONE ESTA LINHA
+          lazy: false,
+        ),
       ],
       child: MaterialApp.router(
         title: 'FITAI - Personal Trainer Inteligente',

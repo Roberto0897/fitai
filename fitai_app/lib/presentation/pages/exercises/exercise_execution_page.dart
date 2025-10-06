@@ -6,6 +6,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/router/app_router.dart';
 import '../workouts/workout_detail_page.dart';
 import 'rest_page.dart';
+import '../../../service/api_service.dart';
 
 class SeriesData {
   int number;
@@ -32,6 +33,8 @@ class ExerciseExecutionPage extends StatefulWidget {
   final List<ExerciseModel> allExercises;
   final int initialWorkoutSeconds;
   final bool isFullWorkout; // NOVO: indica se é treino completo
+  final int? sessionId;      // 🆕 NOVO
+  final int? workoutId;
 
   const ExerciseExecutionPage({
     super.key,
@@ -41,6 +44,8 @@ class ExerciseExecutionPage extends StatefulWidget {
     required this.allExercises,
     this.initialWorkoutSeconds = 0,
     this.isFullWorkout = false, // NOVO: padrão false
+    this.sessionId,          // 🆕 NOVO
+    this.workoutId, 
   });
 
   @override
@@ -227,48 +232,152 @@ class _ExerciseExecutionPageState extends State<ExerciseExecutionPage> {
     }
   }
 
-  void _finishWorkout() {
-    _workoutTimer?.cancel();
-    
+Future<void> _finishWorkout() async {
+  _workoutTimer?.cancel();
+  
+  // 🆕 PASSO 1: Verificar se tem sessão ativa
+  if (widget.sessionId == null) {
+    print('⚠️ Nenhuma sessão ativa (sessionId é null)');
+    print('   Finalizando apenas localmente...');
+    _showCompletionDialogAndExit();
+    return;
+  }
+
+  try {
+    // 🆕 PASSO 2: Mostrar loading
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        title: const Text('Treino Concluído!', style: TextStyle(color: Colors.white)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Parabéns! Você completou todos os exercícios.', style: TextStyle(color: AppColors.textSecondary)),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(color: AppColors.primary),
+      ),
+    );
+
+    // 🆕 PASSO 3: Finalizar sessão no backend
+    print('🏁 Finalizando sessão ${widget.sessionId} no backend...');
+    print('   Tempo total: ${_formatWorkoutTime()}');
+    print('   Workout ID: ${widget.workoutId}');
+    
+    await ApiService.completeWorkoutSession(
+      userRating: 5, // Você pode adicionar um diálogo de avaliação aqui
+      caloriesBurned: null, // Calcule se tiver
+      notes: 'Treino completado - Tempo: ${_formatWorkoutTime()}',
+    );
+    
+    print('✅ Sessão finalizada com sucesso no backend!');
+
+    // Fechar loading
+    if (mounted) Navigator.pop(context);
+
+    // 🆕 PASSO 4: Mostrar diálogo de sucesso
+    _showCompletionDialogAndExit();
+
+  } catch (e) {
+    // Fechar loading se houver
+    if (mounted) Navigator.pop(context);
+    
+    print('❌ Erro ao finalizar sessão no backend: $e');
+    
+    // Mostrar erro mas permitir finalizar localmente
+    if (mounted) {
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          backgroundColor: AppColors.surface,
+          title: const Row(
+            children: [
+              Icon(Icons.warning_amber, color: Colors.orange),
+              SizedBox(width: 12),
+              Text('Erro ao Salvar', style: TextStyle(color: Colors.white)),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Não foi possível salvar o treino no servidor:\n$e',
+                style: const TextStyle(color: AppColors.textSecondary),
               ),
-              child: Column(
-                children: [
-                  const Icon(Icons.timer, color: AppColors.primary, size: 32),
-                  const SizedBox(height: 8),
-                  Text('Tempo total: ${_formatWorkoutTime()}', style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-                ],
+              const SizedBox(height: 16),
+              const Text(
+                'Deseja finalizar assim mesmo?',
+                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
               ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Tentar Novamente'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                _showCompletionDialogAndExit();
+              },
+              child: const Text('Finalizar Localmente', style: TextStyle(color: AppColors.error)),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              Navigator.pop(context);
-            },
-            child: const Text('Finalizar'),
+      );
+    }
+  }
+}
+
+// 🆕 NOVO MÉTODO: Diálogo de conclusão separado
+void _showCompletionDialogAndExit() {
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => AlertDialog(
+      backgroundColor: AppColors.surface,
+      title: const Text(
+        'Treino Concluído!',
+        style: TextStyle(color: Colors.white),
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(
+            'Parabéns! Você completou todos os exercícios.',
+            style: TextStyle(color: AppColors.textSecondary),
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              children: [
+                const Icon(Icons.timer, color: AppColors.primary, size: 32),
+                const SizedBox(height: 8),
+                Text(
+                  'Tempo total: ${_formatWorkoutTime()}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
-    );
-  }
+      actions: [
+        TextButton(
+          onPressed: () {
+            Navigator.pop(context); // Fecha diálogo
+            Navigator.popUntil(context, (route) => route.isFirst); // Volta pro Dashboard
+          },
+          child: const Text('Finalizar'),
+        ),
+      ],
+    ),
+  );
+}
 
   @override
   Widget build(BuildContext context) {

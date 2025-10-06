@@ -460,27 +460,188 @@ class _WorkoutDetailPageState extends State<WorkoutDetailPage> {
     );
   }
 
-  void _startWorkout() {
-    if (_workoutExercises.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Adicione exercícios antes de iniciar o treino'),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
-    }
+ Future<void> _startWorkout() async {
+  if (_workoutExercises.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Adicione exercícios antes de iniciar o treino'),
+        backgroundColor: Colors.red,
+      ),
+    );
+    return;
+  }
 
-    // Inicia do primeiro exercício com cronômetro zerado E MARCA COMO TREINO COMPLETO
+  try {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(),
+      ),
+    );
+
+    print('Iniciando sessão de treino no backend...');
+    
+    final sessionResponse = await ApiService.startWorkoutSession(
+      widget.workout.id,
+    );
+    
+    print('Sessão criada com sucesso!');
+    print('   Session ID: ${sessionResponse['session_id']}');
+
+    if (mounted) Navigator.pop(context);
+
     AppRouter.goToExerciseExecution(
       exercise: _workoutExercises[0],
       totalExercises: _workoutExercises.length,
       currentExerciseIndex: 1,
       allExercises: _workoutExercises,
       initialWorkoutSeconds: 0,
-      isFullWorkout: true, // NOVO: marca como treino completo
+      isFullWorkout: true,
+      sessionId: sessionResponse['session_id'],
+      workoutId: widget.workout.id,
+    );
+
+  } catch (e) {
+    if (mounted) Navigator.pop(context);
+    
+    print('Erro ao iniciar sessão: $e');
+    
+    // Verifica se é erro de sessão ativa
+    if (e.toString().contains('já tem uma sessão em andamento')) {
+      _handleActiveSession(e);
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erro ao iniciar treino: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    }
+  }
+}
+
+Future<void> _handleActiveSession(dynamic error) async {
+  // Tenta extrair info da sessão ativa do erro
+  final activeSession = await ApiService.getActiveSession();
+  
+  if (!mounted) return;
+  
+  showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
+      backgroundColor: AppColors.surface,
+      title: Row(
+        children: [
+          const Icon(Icons.warning_amber, color: Colors.orange),
+          const SizedBox(width: 12),
+          const Text('Treino em Andamento', style: TextStyle(color: Colors.white)),
+        ],
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (activeSession != null) ...[
+            Text(
+              'Você tem um treino ativo:',
+              style: const TextStyle(color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    activeSession['active_workout'] ?? 'Treino Ativo',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'ID da Sessão: ${activeSession['active_session_id']}',
+                    style: const TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+          const Text(
+            'Escolha uma ação:',
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Voltar'),
+        ),
+        TextButton(
+          onPressed: () async {
+            Navigator.pop(context);
+            if (activeSession != null) {
+              await _cancelAndStartNew(activeSession['active_session_id']);
+            }
+          },
+          child: const Text(
+            'Cancelar Anterior e Iniciar',
+            style: TextStyle(color: AppColors.error),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+Future<void> _cancelAndStartNew(int sessionId) async {
+  try {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(),
+      ),
+    );
+
+    print('Cancelando sessão $sessionId...');
+    await ApiService.cancelActiveSession(sessionId);
+    
+    print('Sessão cancelada. Iniciando nova...');
+    
+    if (mounted) Navigator.pop(context);
+    
+    // Tenta iniciar novamente
+    await _startWorkout();
+    
+  } catch (e) {
+    if (mounted) Navigator.pop(context);
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Erro ao cancelar sessão: $e'),
+        backgroundColor: Colors.red,
+      ),
     );
   }
+}
 
   void _openExerciseDetail(ExerciseModel exercise, int index) {
     // Mostra aviso de que deve iniciar pelo botão

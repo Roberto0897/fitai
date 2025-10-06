@@ -207,34 +207,65 @@ def start_workout_session(request, workout_id):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def workout_history(request):
-    """Histórico de treinos do usuário"""
-    sessions = WorkoutSession.objects.filter(user=request.user).order_by('-created_at')[:20]
+    """
+    Histórico de treinos do usuário - formato compatível com Flutter
+    """
+    from django.db.models import Sum, Count
+    from datetime import timedelta
+    from collections import defaultdict
     
-    data = []
-    for session in sessions:
-        data.append({
-            'id': session.id,
-            'workout_name': session.workout.name,
-            'completed': session.completed,
-            'started_at': session.started_at,
-            'completed_at': session.completed_at,
-            'duration_minutes': session.duration_minutes,
-            'calories_burned': session.calories_burned,
-            'user_rating': session.user_rating,
-            'created_at': session.created_at
+    # Buscar sessões concluídas do usuário
+    sessions = WorkoutSession.objects.filter(
+        user=request.user,
+        completed=True
+    ).select_related('workout').order_by('-completed_at')[:50]  # Últimos 50 treinos
+    
+    if not sessions.exists():
+        return Response({
+            'results': [],
+            'count': 0,
+            'message': 'Nenhum treino concluído ainda'
         })
     
-    # Estatísticas
-    total_sessions = WorkoutSession.objects.filter(user=request.user).count()
-    completed_sessions = WorkoutSession.objects.filter(user=request.user, completed=True).count()
+    # Formatar dados para o Flutter
+    history = []
+    for session in sessions:
+        # Calcular exercícios completados
+        exercise_logs = ExerciseLog.objects.filter(session=session)
+        total_exercises = exercise_logs.count()
+        completed_exercises = exercise_logs.filter(completed=True, skipped=False).count()
+        
+        # Data do treino
+        date = session.completed_at if session.completed_at else session.created_at
+        
+        # Grupos musculares trabalhados
+        muscle_groups = []
+        if session.workout.target_muscle_groups:
+            muscle_groups = [g.strip() for g in session.workout.target_muscle_groups.split(',')]
+        
+        history.append({
+            'id': session.id,
+            'workout_name': session.workout.name,
+            'name': session.workout.name,  # Alias
+            'date': date.isoformat(),
+            'completed_at': date.isoformat(),
+            'duration': session.duration_minutes or session.workout.estimated_duration or 0,
+            'calories': session.calories_burned or session.workout.calories_estimate or 0,
+            'category': session.workout.workout_type or 'Geral',
+            'muscle_groups': muscle_groups,
+            'focus_areas': muscle_groups,  # Alias
+            'exercises_completed': completed_exercises,
+            'total_exercises': total_exercises,
+            'completed': True,
+            'user_rating': session.user_rating,
+            'notes': session.notes or ''
+        })
     
     return Response({
-        'history': data,
-        'statistics': {
-            'total_sessions': total_sessions,
-            'completed_sessions': completed_sessions,
-            'completion_rate': round(completed_sessions / total_sessions * 100, 1) if total_sessions > 0 else 0
-        }
+        'results': history,
+        'sessions': history,  # Alias para compatibilidade
+        'count': len(history),
+        'total': len(history)
     })
 
 @api_view(['GET'])
@@ -540,88 +571,109 @@ def cancel_session(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def user_analytics(request):
-    """Analytics completas do usuário - última semana/mês"""
+    """
+    Analytics completas do usuário - formato compatível com Flutter
+    """
     from django.db.models import Sum, Avg, Count
-    from datetime import datetime, timedelta
+    from datetime import timedelta
+    from collections import defaultdict
     
     # Períodos de análise
     now = timezone.now()
-    last_week = now - timedelta(days=7)
-    last_month = now - timedelta(days=30)
+    ninety_days_ago = now - timedelta(days=90)
     
     # Sessões do usuário
-    all_sessions = WorkoutSession.objects.filter(user=request.user, completed=True)
-    week_sessions = all_sessions.filter(completed_at__gte=last_week)
-    month_sessions = all_sessions.filter(completed_at__gte=last_month)
+    all_sessions = WorkoutSession.objects.filter(
+        user=request.user, 
+        completed=True,
+        completed_at__gte=ninety_days_ago
+    )
     
-    # Estatísticas gerais
+    if not all_sessions.exists():
+        return Response({
+            'total_workouts': 0,
+            'total_duration': 0,
+            'total_calories': 0,
+            'active_days': 0,
+            'current_streak': 0,
+            'workouts_by_category': {},
+            'muscle_group_frequency': {},
+            'favorite_exercise': 'Nenhum',
+            'favorite_exercise_count': 0,
+            'average_duration': 0.0,
+        })
+    
+    # Estatísticas básicas
     total_workouts = all_sessions.count()
-    total_time = all_sessions.aggregate(Sum('duration_minutes'))['duration_minutes__sum'] or 0
-    avg_rating = all_sessions.aggregate(Avg('user_rating'))['user_rating__avg'] or 0
-    total_calories = all_sessions.aggregate(Sum('calories_burned'))['calories_burned__sum'] or 0
+    total_duration = all_sessions.aggregate(total=Sum('duration_minutes'))['total'] or 0
+    total_calories = all_sessions.aggregate(total=Sum('calories_burned'))['total'] or 0
     
-    # Estatísticas semanais
-    week_workouts = week_sessions.count()
-    week_time = week_sessions.aggregate(Sum('duration_minutes'))['duration_minutes__sum'] or 0
-    week_calories = week_sessions.aggregate(Sum('calories_burned'))['calories_burned__sum'] or 0
+    # Dias ativos (dias únicos com treino)
+    active_dates = all_sessions.values_list('completed_at__date', flat=True).distinct()
+    active_days = len(set(active_dates))
     
-    # Estatísticas mensais
-    month_workouts = month_sessions.count()
-    month_time = month_sessions.aggregate(Sum('duration_minutes'))['duration_minutes__sum'] or 0
-    month_calories = month_sessions.aggregate(Sum('calories_burned'))['calories_burned__sum'] or 0
-    
-    # Treinos mais realizados
-    popular_workouts = (all_sessions.values('workout__name')
-                       .annotate(count=Count('id'))
-                       .order_by('-count')[:5])
-    
-    # Análise de consistência (dias consecutivos)
-    recent_sessions = all_sessions.filter(completed_at__gte=last_month).order_by('-completed_at')
-    streak_days = 0
-    if recent_sessions.exists():
-        last_workout_date = recent_sessions.first().completed_at.date()
-        current_date = last_workout_date
+    # Calcular streak de dias consecutivos
+    current_streak = 0
+    workout_dates = set(all_sessions.values_list('completed_at__date', flat=True))
+    if workout_dates:
+        current_date = now.date()
+        # Permitir streak mesmo se não treinou hoje (considera ontem)
+        if current_date not in workout_dates:
+            current_date = current_date - timedelta(days=1)
         
-        for session in recent_sessions:
-            session_date = session.completed_at.date()
-            if session_date == current_date:
-                streak_days += 1
-                current_date = current_date - timedelta(days=1)
-            else:
+        while current_date in workout_dates:
+            current_streak += 1
+            current_date = current_date - timedelta(days=1)
+            if current_streak > 365:  # Limite de segurança
                 break
     
+    # Treinos por categoria
+    workouts_by_category = defaultdict(int)
+    for session in all_sessions:
+        category = session.workout.workout_type or 'Geral'
+        workouts_by_category[category] += 1
+    
+    # Frequência de grupos musculares
+    muscle_group_frequency = defaultdict(int)
+    for session in all_sessions:
+        if session.workout.target_muscle_groups:
+            groups = [g.strip() for g in session.workout.target_muscle_groups.split(',')]
+            for group in groups:
+                if group:
+                    muscle_group_frequency[group] += 1
+    
+    # Exercício favorito
+    favorite_exercise = 'Nenhum'
+    favorite_count = 0
+    try:
+        exercise_counts = ExerciseLog.objects.filter(
+            session__user=request.user,
+            completed=True,
+            skipped=False
+        ).values('workout_exercise__exercise__name').annotate(
+            count=Count('id')
+        ).order_by('-count').first()
+        
+        if exercise_counts:
+            favorite_exercise = exercise_counts['workout_exercise__exercise__name']
+            favorite_count = exercise_counts['count']
+    except Exception as e:
+        print(f"Erro ao buscar exercício favorito: {e}")
+    
+    # Duração média
+    average_duration = float(total_duration / total_workouts) if total_workouts > 0 else 0.0
+    
     return Response({
-        "analytics_period": {
-            "generated_at": now,
-            "week_start": last_week.date(),
-            "month_start": last_month.date()
-        },
-        "overall_stats": {
-            "total_workouts": total_workouts,
-            "total_time_minutes": total_time,
-            "total_time_hours": round(total_time / 60, 1) if total_time else 0,
-            "average_rating": round(avg_rating, 1),
-            "total_calories_burned": total_calories,
-            "current_streak_days": streak_days
-        },
-        "weekly_stats": {
-            "workouts": week_workouts,
-            "time_minutes": week_time,
-            "calories_burned": week_calories,
-            "avg_per_day": round(week_workouts / 7, 1)
-        },
-        "monthly_stats": {
-            "workouts": month_workouts,
-            "time_minutes": month_time,
-            "calories_burned": month_calories,
-            "avg_per_week": round(month_workouts / 4, 1)
-        },
-        "popular_workouts": list(popular_workouts),
-        "insights": {
-            "most_active_day": "Análise disponível com mais dados",
-            "improvement_trend": "Positiva" if week_workouts > 0 else "Inicie hoje!",
-            "consistency_level": "Excelente" if streak_days >= 7 else "Boa" if streak_days >= 3 else "Pode melhorar"
-        }
+        'total_workouts': total_workouts,
+        'total_duration': total_duration,
+        'total_calories': total_calories,
+        'active_days': active_days,
+        'current_streak': current_streak,
+        'workouts_by_category': dict(workouts_by_category),
+        'muscle_group_frequency': dict(muscle_group_frequency),
+        'favorite_exercise': favorite_exercise,
+        'favorite_exercise_count': favorite_count,
+        'average_duration': round(average_duration, 1),
     })
 
 @api_view(['GET'])
@@ -1211,4 +1263,62 @@ def duplicate_workout(request, workout_id):
         
     except Workout.DoesNotExist:
         return Response({"error": "Treino não encontrado"}, status=status.HTTP_404_NOT_FOUND)
+    
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_active_session(request):
+    """Retorna a sessão ativa do usuário"""
+    active_session = WorkoutSession.objects.filter(
+        user=request.user,
+        completed=False
+    ).first()
+    
+    if not active_session:
+        return Response(
+            {'message': 'Nenhuma sessão ativa'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+    
+    return Response({
+        'active_session_id': active_session.id,
+        'active_workout': active_session.workout.name,
+        'started_at': active_session.started_at,
+        'workout_id': active_session.workout.id,
+    })
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def cancel_active_session(request, session_id):
+    """Cancela uma sessão ativa específica"""
+    try:
+        session = WorkoutSession.objects.get(
+            id=session_id,
+            user=request.user,
+            completed=False
+        )
+        
+        # Marcar como cancelada (não deletar para manter histórico)
+        session.completed = True
+        session.completed_at = timezone.now()
+        
+        # Adicionar nota de cancelamento
+        cancel_note = f"Sessão cancelada pelo usuário em {timezone.now().strftime('%d/%m/%Y às %H:%M')}"
+        if session.notes:
+            session.notes += f"\n{cancel_note}"
+        else:
+            session.notes = cancel_note
+        
+        session.save()
+        
+        return Response({
+            'message': 'Sessão cancelada com sucesso',
+            'session_id': session_id,
+            'workout_name': session.workout.name
+        })
+        
+    except WorkoutSession.DoesNotExist:
+        return Response(
+            {'error': 'Sessão não encontrada ou não pertence a você'},
+            status=status.HTTP_404_NOT_FOUND
+        )
     

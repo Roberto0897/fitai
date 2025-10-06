@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../service/chat_service.dart';
+import '../../../models/chat_models.dart';
 
 class ChatBotPage extends StatefulWidget {
   const ChatBotPage({super.key});
@@ -11,16 +14,12 @@ class ChatBotPage extends StatefulWidget {
 class _ChatBotPageState extends State<ChatBotPage> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-  final List<ChatMessage> _messages = [];
-  bool _isTyping = false;
+  bool _isInitialized = false;
 
   @override
   void initState() {
     super.initState();
-    // Mensagem de boas-vindas
-    _addBotMessage(
-      'Olá! 👋 Sou seu assistente de treinos FITAI. Como posso te ajudar hoje?',
-    );
+    _initializeChat();
   }
 
   @override
@@ -30,26 +29,17 @@ class _ChatBotPageState extends State<ChatBotPage> {
     super.dispose();
   }
 
-  void _addBotMessage(String text) {
-    setState(() {
-      _messages.add(ChatMessage(
-        text: text,
-        isUser: false,
-        timestamp: DateTime.now(),
-      ));
-    });
-    _scrollToBottom();
-  }
+  Future<void> _initializeChat() async {
+    final chatService = context.read<ChatService>();
+    
+    // Se não há conversa ativa, iniciar uma
+    if (!chatService.hasActiveConversation) {
+      await chatService.startConversation(
+        type: ConversationType.generalFitness,
+      );
+    }
 
-  void _addUserMessage(String text) {
-    setState(() {
-      _messages.add(ChatMessage(
-        text: text,
-        isUser: true,
-        timestamp: DateTime.now(),
-      ));
-    });
-    _scrollToBottom();
+    setState(() => _isInitialized = true);
   }
 
   void _scrollToBottom() {
@@ -68,40 +58,31 @@ class _ChatBotPageState extends State<ChatBotPage> {
     final text = _messageController.text.trim();
     if (text.isEmpty) return;
 
-    // Adiciona mensagem do usuário
-    _addUserMessage(text);
-    _messageController.clear();
-
-    // Simula que o bot está digitando
-    setState(() => _isTyping = true);
-
-    // Simula delay de resposta (aqui você integraria com sua API/backend)
-    await Future.delayed(const Duration(seconds: 1));
-
-    setState(() => _isTyping = false);
-
-    // Resposta do bot (exemplo - integre com seu backend)
-    _addBotMessage(_getBotResponse(text));
-  }
-
-  String _getBotResponse(String userMessage) {
-    final message = userMessage.toLowerCase();
+    final chatService = context.read<ChatService>();
     
-    if (message.contains('treino') || message.contains('workout')) {
-      return 'Posso te ajudar com seus treinos! Você gostaria de:\n\n• Ver treinos disponíveis\n• Criar um novo treino\n• Ajustar exercícios\n\nO que prefere?';
-    } else if (message.contains('exercício') || message.contains('exercicio')) {
-      return 'Claro! Temos diversos exercícios disponíveis. Você está procurando exercícios para qual grupo muscular? (Peito, Costas, Pernas, etc.)';
-    } else if (message.contains('ajuda') || message.contains('help')) {
-      return 'Estou aqui para te ajudar! Posso auxiliar com:\n\n• Sugestões de treinos\n• Dicas de exercícios\n• Dúvidas sobre execução\n• Planejamento de rotina\n\nSobre o que você quer saber?';
+    _messageController.clear();
+    
+    final success = await chatService.sendMessage(text);
+    
+    if (success) {
+      _scrollToBottom();
     } else {
-      return 'Entendi! Como posso te ajudar mais especificamente? Você pode me perguntar sobre treinos, exercícios ou dicas de fitness! 💪';
+      // Mostrar erro se falhar
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(chatService.error ?? 'Erro ao enviar mensagem'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color.fromARGB(255, 44, 44, 44),
+      backgroundColor: const Color(0xFF2C2C2C),
       appBar: AppBar(
         backgroundColor: AppColors.primary,
         elevation: 0,
@@ -147,33 +128,54 @@ class _ChatBotPageState extends State<ChatBotPage> {
             ),
           ],
         ),
-      ),
-      body: Column(
-        children: [
-          // Lista de mensagens
-          Expanded(
-            child: _messages.isEmpty
-                ? _buildEmptyState()
-                : ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.all(16),
-                    itemCount: _messages.length,
-                    itemBuilder: (context, index) {
-                      return _buildMessageBubble(_messages[index]);
-                    },
-                  ),
+        actions: [
+          // Botão de nova conversa
+          IconButton(
+            icon: const Icon(Icons.refresh, color: Colors.white),
+            onPressed: () async {
+              final chatService = context.read<ChatService>();
+              chatService.reset();
+              await _initializeChat();
+            },
+            tooltip: 'Nova conversa',
           ),
-
-          // Indicador de digitação
-          if (_isTyping) _buildTypingIndicator(),
-
-          // Sugestões rápidas (mostrar quando lista vazia)
-          if (_messages.length <= 1) _buildQuickSuggestions(),
-
-          // Input de mensagem
-          _buildMessageInput(),
         ],
       ),
+      body: !_isInitialized
+          ? const Center(child: CircularProgressIndicator())
+          : Consumer<ChatService>(
+              builder: (context, chatService, child) {
+                return Column(
+                  children: [
+                    // Lista de mensagens
+                    Expanded(
+                      child: chatService.messages.isEmpty
+                          ? _buildEmptyState()
+                          : ListView.builder(
+                              controller: _scrollController,
+                              padding: const EdgeInsets.all(16),
+                              itemCount: chatService.messages.length,
+                              itemBuilder: (context, index) {
+                                return _buildMessageBubble(
+                                  chatService.messages[index],
+                                );
+                              },
+                            ),
+                    ),
+
+                    // Indicador de digitação
+                    if (chatService.isSending) _buildTypingIndicator(),
+
+                    // Sugestões rápidas
+                    if (chatService.messages.length <= 1)
+                      _buildQuickSuggestions(),
+
+                    // Input de mensagem
+                    _buildMessageInput(chatService.isSending),
+                  ],
+                );
+              },
+            ),
     );
   }
 
@@ -188,11 +190,11 @@ class _ChatBotPageState extends State<ChatBotPage> {
             color: AppColors.textSecondary.withOpacity(0.3),
           ),
           const SizedBox(height: 16),
-          Text(
+          const Text(
             'Comece uma conversa',
             style: TextStyle(
               fontSize: 18,
-              color: const Color.fromARGB(255, 26, 26, 26),
+              color: Colors.white70,
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -201,7 +203,7 @@ class _ChatBotPageState extends State<ChatBotPage> {
             'Pergunte sobre treinos, exercícios ou dicas',
             style: TextStyle(
               fontSize: 14,
-              color: const Color.fromARGB(255, 26, 26, 26).withOpacity(0.7),
+              color: Colors.white.withOpacity(0.5),
             ),
           ),
         ],
@@ -239,7 +241,7 @@ class _ChatBotPageState extends State<ChatBotPage> {
               decoration: BoxDecoration(
                 color: message.isUser
                     ? AppColors.primary
-                    : const Color.fromARGB(255, 26, 26, 26),
+                    : const Color(0xFF1A1A1A),
                 borderRadius: BorderRadius.only(
                   topLeft: const Radius.circular(16),
                   topRight: const Radius.circular(16),
@@ -247,13 +249,45 @@ class _ChatBotPageState extends State<ChatBotPage> {
                   bottomRight: Radius.circular(message.isUser ? 4 : 16),
                 ),
               ),
-              child: Text(
-                message.text,
-                style: TextStyle(
-                  color: message.isUser ? const Color.fromARGB(255, 26, 26, 26) : AppColors.textPrimary,
-                  fontSize: 15,
-                  height: 1.4,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    message.text,
+                    style: TextStyle(
+                      color: message.isUser
+                          ? Colors.white
+                          : AppColors.textPrimary,
+                      fontSize: 15,
+                      height: 1.4,
+                    ),
+                  ),
+                  // Confidence indicator para mensagens da IA
+                  if (!message.isUser && message.confidence != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            (message.confidence != null && message.confidence! >= 0.8)
+                                ? Icons.verified
+                                : Icons.info_outline,
+                            size: 12,
+                            color: Colors.white54,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            '${(message.confidence! * 100).toInt()}% confiança',
+                            style: const TextStyle(
+                              fontSize: 10,
+                              color: Colors.white54,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
               ),
             ),
           ),
@@ -300,17 +334,17 @@ class _ChatBotPageState extends State<ChatBotPage> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: const Color(0xFF1A1A1A),
               borderRadius: BorderRadius.circular(16),
             ),
             child: Row(
-              children: [
-                _buildDot(0),
-                const SizedBox(width: 4),
-                _buildDot(1),
-                const SizedBox(width: 4),
-                _buildDot(2),
-              ],
+              children: List.generate(
+                3,
+                (index) => Padding(
+                  padding: EdgeInsets.only(left: index > 0 ? 4 : 0),
+                  child: _buildDot(index),
+                ),
+              ),
             ),
           ),
         ],
@@ -320,16 +354,19 @@ class _ChatBotPageState extends State<ChatBotPage> {
 
   Widget _buildDot(int index) {
     return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0.0, end: 1.0),
+      key: ValueKey(index),
+      tween: Tween(begin: 0.3, end: 1.0),
       duration: const Duration(milliseconds: 600),
+      curve: Curves.easeInOut,
       builder: (context, value, child) {
-        return Opacity(
-          opacity: (value + index * 0.3) % 1.0,
+        return AnimatedOpacity(
+          opacity: (value + index * 0.2) % 1.0,
+          duration: const Duration(milliseconds: 300),
           child: Container(
             width: 8,
             height: 8,
             decoration: const BoxDecoration(
-              color: AppColors.textSecondary,
+              color: Colors.white70,
               shape: BoxShape.circle,
             ),
           ),
@@ -341,8 +378,8 @@ class _ChatBotPageState extends State<ChatBotPage> {
   Widget _buildQuickSuggestions() {
     final suggestions = [
       {'icon': Icons.fitness_center, 'text': 'Sugerir treino'},
-      {'icon': Icons.help_outline, 'text': 'Como fazer?'},
-      {'icon': Icons.tips_and_updates, 'text': 'Dicas'},
+      {'icon': Icons.help_outline, 'text': 'Como fazer exercícios?'},
+      {'icon': Icons.tips_and_updates, 'text': 'Dicas de fitness'},
     ];
 
     return SizedBox(
@@ -364,11 +401,11 @@ class _ChatBotPageState extends State<ChatBotPage> {
               label: Text(
                 suggestion['text'] as String,
                 style: const TextStyle(
-                  color: Color.fromARGB(255, 26, 26, 26),
+                  color: Colors.white,
                   fontSize: 13,
                 ),
               ),
-              backgroundColor: Colors.white,
+              backgroundColor: const Color(0xFF1A1A1A),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(20),
                 side: BorderSide(
@@ -386,14 +423,14 @@ class _ChatBotPageState extends State<ChatBotPage> {
     );
   }
 
-  Widget _buildMessageInput() {
+  Widget _buildMessageInput(bool isDisabled) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color.fromARGB(255, 48, 48, 48),
+        color: const Color(0xFF303030),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
+            color: Colors.black.withOpacity(0.2),
             blurRadius: 8,
             offset: const Offset(0, -2),
           ),
@@ -405,12 +442,17 @@ class _ChatBotPageState extends State<ChatBotPage> {
             Expanded(
               child: TextField(
                 controller: _messageController,
-                style: const TextStyle(color: Color.fromARGB(255, 26, 26, 26)),
+                enabled: !isDisabled,
+                style: const TextStyle(color: Colors.white),
                 decoration: InputDecoration(
-                  hintText: 'Digite sua mensagem...',
-                  hintStyle: const TextStyle(color: AppColors.textSecondary),
+                  hintText: isDisabled
+                      ? 'Aguarde a resposta...'
+                      : 'Digite sua mensagem...',
+                  hintStyle: TextStyle(
+                    color: Colors.white.withOpacity(0.5),
+                  ),
                   filled: true,
-                  fillColor: const Color.fromARGB(255, 255, 252, 252),
+                  fillColor: const Color(0xFF1A1A1A),
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(24),
                     borderSide: BorderSide.none,
@@ -422,18 +464,20 @@ class _ChatBotPageState extends State<ChatBotPage> {
                 ),
                 maxLines: null,
                 textInputAction: TextInputAction.send,
-                onSubmitted: (_) => _sendMessage(),
+                onSubmitted: (_) => isDisabled ? null : _sendMessage(),
               ),
             ),
             const SizedBox(width: 8),
             Container(
-              decoration: const BoxDecoration(
-                color: AppColors.primary,
+              decoration: BoxDecoration(
+                color: isDisabled
+                    ? Colors.grey
+                    : AppColors.primary,
                 shape: BoxShape.circle,
               ),
               child: IconButton(
                 icon: const Icon(Icons.send, color: Colors.white),
-                onPressed: _sendMessage,
+                onPressed: isDisabled ? null : _sendMessage,
               ),
             ),
           ],
@@ -441,19 +485,4 @@ class _ChatBotPageState extends State<ChatBotPage> {
       ),
     );
   }
-}
-
-class ChatMessage {
-  final String text;
-  final bool isUser;
-  final DateTime timestamp;
-
-  ChatMessage({
-    required this.text,
-    required this.isUser,
-    required this.timestamp,
-  });
-
-
-  
 }

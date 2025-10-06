@@ -60,6 +60,10 @@ def get_or_create_user_and_profile(firebase_uid, email=None):
             email=email,
             first_name=display_name
         )
+        #evitar que o django acesse senhas , remover caso erro
+        user.set_unusable_password()
+        user.save()
+
         print(f"✅ User Django criado: {user.username}")
     
     # Buscar ou criar UserProfile
@@ -327,3 +331,293 @@ def login_user(request):
         'message': 'Use Firebase Authentication no frontend',
         'success': True
     })
+
+# ============================================================
+# ANALYTICS - Estatísticas do usuário (SEM MIGRATIONS)
+# ============================================================
+
+@api_view(['GET'])
+def user_analytics(request):
+    """
+    Retorna estatísticas completas do usuário
+    USA APENAS WorkoutSession existente - NÃO PRECISA DE MIGRATIONS
+    """
+    firebase_uid, error_response = verify_firebase_token(request)
+    if error_response:
+        return error_response
+    
+    try:
+        profile, _ = get_or_create_user_and_profile(firebase_uid)
+        user = profile.user
+        
+        print(f"📊 Calculando analytics para user_id={user.id}")
+        
+        # Importar WorkoutSession
+        try:
+            from workouts.models import WorkoutSession, ExerciseLog
+        except ImportError:
+            print("⚠️ Models de workout não encontrados")
+            return _return_empty_analytics()
+        
+        # Pegar treinos concluídos dos últimos 90 dias
+        ninety_days_ago = timezone.now() - timedelta(days=90)
+        sessions = WorkoutSession.objects.filter(
+            user=user,
+            completed_at__isnull=False,
+            completed_at__gte=ninety_days_ago
+        ).order_by('-completed_at')
+        
+        if not sessions.exists():
+            print("ℹ️ Nenhum treino concluído encontrado")
+            return _return_empty_analytics()
+        
+        # Estatísticas básicas
+        total_workouts = sessions.count()
+        total_duration = sessions.aggregate(total=Sum('duration_minutes'))['total'] or 0
+        total_calories = sessions.aggregate(total=Sum('calories_burned'))['total'] or 0
+        
+        # Dias ativos
+        active_dates = sessions.values_list('completed_at__date', flat=True).distinct()
+        active_days = len(set(active_dates))
+        
+        # Calcular streak
+        current_streak = _calculate_workout_streak_simple(sessions)
+        
+        # Treinos por categoria
+        workouts_by_category = _calculate_workouts_by_category(sessions)
+        
+        # Frequência de grupos musculares
+        muscle_group_frequency = _calculate_muscle_frequency_simple(sessions)
+        
+        # Exercício favorito
+        favorite_exercise, favorite_count = _get_favorite_exercise_simple(user)
+        
+        # Duração média
+        average_duration = float(total_duration / total_workouts) if total_workouts > 0 else 0.0
+        
+        analytics_data = {
+            'total_workouts': total_workouts,
+            'total_duration': total_duration,
+            'total_calories': total_calories,
+            'active_days': active_days,
+            'current_streak': current_streak,
+            'workouts_by_category': workouts_by_category,
+            'muscle_group_frequency': muscle_group_frequency,
+            'favorite_exercise': favorite_exercise,
+            'favorite_exercise_count': favorite_count,
+            'average_duration': round(average_duration, 1),
+        }
+        
+        print(f"✅ Analytics: {total_workouts} treinos, {active_days} dias ativos")
+        return Response(analytics_data)
+        
+    except Exception as e:
+        print(f"❌ Erro ao calcular analytics: {e}")
+        import traceback
+        traceback.print_exc()
+        return _return_empty_analytics()
+
+
+def _return_empty_analytics():
+    """Retorna analytics vazio quando não há dados"""
+    return Response({
+        'total_workouts': 0,
+        'total_duration': 0,
+        'total_calories': 0,
+        'active_days': 0,
+        'current_streak': 0,
+        'workouts_by_category': {},
+        'muscle_group_frequency': {},
+        'favorite_exercise': 'Nenhum',
+        'favorite_exercise_count': 0,
+        'average_duration': 0.0,
+    })
+
+
+def _calculate_workout_streak_simple(sessions):
+    """Calcula streak de dias consecutivos"""
+    try:
+        workout_dates = set(sessions.values_list('completed_at__date', flat=True))
+        if not workout_dates:
+            return 0
+        
+        current_date = timezone.now().date()
+        streak = 0
+        
+        # Verificar se treinou hoje ou ontem (permite 1 dia de descanso)
+        if current_date not in workout_dates and (current_date - timedelta(days=1)) not in workout_dates:
+            return 0
+        
+        # Contar dias consecutivos
+        while current_date in workout_dates:
+            streak += 1
+            current_date = current_date - timedelta(days=1)
+            if streak > 365:  # Limite de segurança
+                break
+        
+        return streak
+        
+    except Exception as e:
+        print(f"⚠️ Erro ao calcular streak: {e}")
+        return 0
+
+
+def _calculate_workouts_by_category(sessions):
+    """Calcula distribuição de treinos por categoria"""
+    category_counts = defaultdict(int)
+    
+    for session in sessions:
+        if session.workout:
+            category = session.workout.workout_type or 'Geral'
+            category_counts[category] += 1
+    
+    return dict(category_counts)
+
+
+def _calculate_muscle_frequency_simple(sessions):
+    """Calcula frequência de grupos musculares"""
+    muscle_frequency = defaultdict(int)
+    
+    for session in sessions:
+        if session.workout and session.workout.target_muscle_groups:
+            groups = [g.strip() for g in session.workout.target_muscle_groups.split(',')]
+            for group in groups:
+                if group:
+                    muscle_frequency[group] += 1
+    
+    return dict(muscle_frequency)
+
+
+def _get_favorite_exercise_simple(user):
+    """Encontra exercício mais realizado"""
+    try:
+        from workouts.models import ExerciseLog
+        
+        exercise_counts = ExerciseLog.objects.filter(
+            session__user=user,
+            status='completed'
+        ).values('exercise__name').annotate(
+            count=Count('id')
+        ).order_by('-count').first()
+        
+        if exercise_counts:
+            return exercise_counts['exercise__name'], exercise_counts['count']
+        
+        return 'Nenhum', 0
+        
+    except Exception as e:
+        print(f"⚠️ Erro ao buscar exercício favorito: {e}")
+        return 'Nenhum', 0
+
+
+# ============================================================
+# PESO - USA current_weight DO UserProfile (SEM MIGRATIONS)
+# ============================================================
+
+@api_view(['GET'])
+def weight_history(request):
+    """
+    Retorna histórico de peso do usuário
+    USA APENAS current_weight do UserProfile - SEM TABELA SEPARADA
+    """
+    firebase_uid, error_response = verify_firebase_token(request)
+    if error_response:
+        return error_response
+    
+    try:
+        profile, _ = get_or_create_user_and_profile(firebase_uid)
+        
+        # Verificar se existe histórico armazenado como JSON (opcional)
+        weight_history_json = getattr(profile, 'weight_history_json', None)
+        
+        if weight_history_json:
+            try:
+                weights = json.loads(weight_history_json)
+            except (json.JSONDecodeError, TypeError):
+                weights = []
+        else:
+            # Se não tem histórico, criar entry com peso atual
+            weights = []
+            if profile.current_weight:
+                weights = [{
+                    'date': timezone.now().date().isoformat(),
+                    'weight': float(profile.current_weight),
+                    'notes': ''
+                }]
+        
+        print(f"✅ {len(weights)} registros de peso")
+        
+        return Response({
+            'success': True,
+            'count': len(weights),
+            'weights': weights,
+            'current_weight': float(profile.current_weight) if profile.current_weight else None
+        })
+        
+    except Exception as e:
+        print(f"❌ Erro ao buscar peso: {e}")
+        return Response(
+            {'error': f'Erro: {str(e)}'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+@api_view(['POST'])
+def add_weight_log(request):
+    """
+    Adiciona peso (atualiza current_weight no UserProfile)
+    NÃO PRECISA DE TABELA SEPARADA
+    """
+    firebase_uid, error_response = verify_firebase_token(request)
+    if error_response:
+        return error_response
+    
+    try:
+        profile, _ = get_or_create_user_and_profile(firebase_uid)
+        
+        weight = request.data.get('weight')
+        notes = request.data.get('notes', '')
+        
+        if not weight:
+            return Response(
+                {'error': 'Peso é obrigatório'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            weight = float(weight)
+        except (ValueError, TypeError):
+            return Response(
+                {'error': 'Peso inválido'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if weight <= 0 or weight > 500:
+            return Response(
+                {'error': 'Peso deve estar entre 0 e 500 kg'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Atualizar peso atual
+        profile.current_weight = weight
+        profile.save()
+        
+        print(f"✅ Peso atualizado: {weight}kg")
+        
+        return Response({
+            'success': True,
+            'created': True,
+            'weight_log': {
+                'id': profile.id,
+                'date': timezone.now().date().isoformat(),
+                'weight': weight,
+                'notes': notes
+            }
+        })
+        
+    except Exception as e:
+        print(f"❌ Erro ao adicionar peso: {e}")
+        return Response(
+            {'error': f'Erro: {str(e)}'}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )

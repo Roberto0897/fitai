@@ -248,21 +248,50 @@ class ApiService {
     int? caloriesBurned,
     String? notes,
   }) async {
-    return await post('/sessions/complete/', {
+    return await post('/workouts/sessions/complete/', {
       if (userRating != null) 'user_rating': userRating,
       if (caloriesBurned != null) 'calories_burned': caloriesBurned,
       if (notes != null) 'notes': notes,
     });
   }
-  
+  // ============================================================
+// ADICIONE ESTES MÉTODOS NA SEÇÃO DE WORKOUTS DO SEU API_SERVICE
+// (depois do método completeWorkoutSession)
+// ============================================================
+
+/// Buscar sessão ativa do usuário
+static Future<Map<String, dynamic>?> getActiveSession() async {
+  try {
+    print('🔍 Buscando sessão ativa...');
+    final response = await get('/workouts/sessions/active/');
+    print('✅ Sessão ativa encontrada: $response');
+    return response;
+  } catch (e) {
+    // Se retornar 404, significa que não há sessão ativa
+    if (e is ApiException && e.statusCode == 404) {
+      print('ℹ️ Nenhuma sessão ativa encontrada');
+      return null;
+    }
+    print('❌ Erro ao buscar sessão ativa: $e');
+    rethrow;
+  }
+}
+
+/// Cancelar sessão ativa
+static Future<Map<String, dynamic>> cancelActiveSession(int sessionId) async {
+  print('🗑️ Cancelando sessão $sessionId...');
+  final response = await post('/workouts/sessions/$sessionId/cancel/', {});
+  print('✅ Sessão cancelada com sucesso');
+  return response;
+}
   /// Histórico de treinos
   static Future<Map<String, dynamic>> getWorkoutHistory() async {
-    return await get('/sessions/history/');
+    return await get('/workouts/sessions/history/');
   }
   
   /// Status da sessão atual
   static Future<Map<String, dynamic>> getCurrentSessionStatus() async {
-    return await get('/sessions/current/');
+    return await get('/workouts/sessions/current/');
   }
   
   // ============================================================
@@ -312,7 +341,7 @@ class ApiService {
   
   /// Analytics do usuário
   static Future<Map<String, dynamic>> getUserAnalytics() async {
-    return await get('/analytics/');
+    return await get('users/analytics/');
   }
   
   // ============================================================
@@ -411,6 +440,96 @@ static Future<Map<String, dynamic>> createWorkout({
   /// Duplicar treino (criar cópia personalizada)
   static Future<Map<String, dynamic>> duplicateWorkout(int workoutId) async {
     return await post('/workouts/$workoutId/duplicate/', {});
+}
+
+// ============================================================
+// ENDPOINTS ESPECÍFICOS - CHATBOT
+// ============================================================
+
+/// Testar API do chatbot
+static Future<Map<String, dynamic>> testChatbotAPI() async {
+  return await get('/chat/test/');
+}
+
+/// Iniciar nova conversa
+static Future<Map<String, dynamic>> startConversation({
+  String conversationType = 'general_fitness',
+  String? initialMessage,
+  bool forceNew = false,
+}) async {
+  return await post('/chat/conversations/start/', {
+    'type': conversationType,
+    if (initialMessage != null) 'message': initialMessage,
+    'force_new': forceNew,
+  });
+}
+
+/// Enviar mensagem em conversa
+static Future<Map<String, dynamic>> sendChatMessage({
+  required int conversationId,
+  required String message,
+  String? contextHint,
+}) async {
+  return await post('/chat/conversations/$conversationId/message/', {
+    'message': message,
+    if (contextHint != null) 'context_hint': contextHint,
+  });
+}
+
+/// Buscar histórico da conversa
+static Future<Map<String, dynamic>> getConversationHistory({
+  required int conversationId,
+  int limit = 50,
+  int offset = 0,
+  bool includeContext = false,
+}) async {
+  return await get(
+    '/chat/conversations/$conversationId/history/?limit=$limit&offset=$offset&include_context=$includeContext'
+  );
+}
+
+/// Listar todas conversas do usuário
+static Future<Map<String, dynamic>> getUserConversations({
+  String status = 'all',
+  String type = 'all',
+  int days = 30,
+  int limit = 20,
+  int offset = 0,
+}) async {
+  return await get(
+    '/chat/conversations/?status=$status&type=$type&days=$days&limit=$limit&offset=$offset'
+  );
+}
+
+/// Finalizar conversa
+static Future<Map<String, dynamic>> endConversation({
+  required int conversationId,
+  double? rating,
+  String? feedback,
+}) async {
+  return await post('/chat/conversations/$conversationId/end/', {
+    if (rating != null) 'rating': rating,
+    if (feedback != null) 'feedback': feedback,
+  });
+}
+
+/// Dar feedback em mensagem específica
+static Future<Map<String, dynamic>> sendMessageFeedback({
+  required int messageId,
+  required String reaction, // 'helpful', 'not_helpful', 'excellent', 'needs_improvement'
+  String? feedback,
+}) async {
+  return await post('/chat/messages/$messageId/feedback/', {
+    'reaction': reaction,
+    if (feedback != null) 'feedback': feedback,
+  });
+}
+
+/// Buscar analytics do chat
+static Future<Map<String, dynamic>> getChatAnalytics({
+  int days = 30,
+}) async {
+  return await get('/chat/analytics/?days=$days');
 }
   // ============================================================
   // TESTE DE CONEXÃO
