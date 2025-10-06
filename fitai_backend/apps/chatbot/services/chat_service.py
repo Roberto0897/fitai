@@ -1,4 +1,5 @@
 # apps/chatbot/services/chat_service.py
+# VERSÃO CORRIGIDA PARA GOOGLE GEMINI
 import json
 import time
 import logging
@@ -20,7 +21,7 @@ logger = logging.getLogger(__name__)
 class ChatService:
     """
     Serviço principal para gerenciamento de conversas de chatbot com IA
-    Integrado com o sistema de fitness existente
+    Integrado com Google Gemini
     """
     
     def __init__(self):
@@ -30,11 +31,8 @@ class ChatService:
         
     def start_conversation(self, user: User, conversation_type: str = 'general_fitness',
                           initial_message: str = None) -> Dict:
-        """
-        Inicia nova conversa de chatbot com contexto personalizado
-        """
+        """Inicia nova conversa de chatbot com contexto personalizado"""
         try:
-            # Verificar se usuário tem conversa ativa recente
             recent_conversation = Conversation.objects.filter(
                 user=user,
                 status='active',
@@ -50,17 +48,15 @@ class ChatService:
                     'context_loaded': True
                 }
             
-            # Criar nova conversa
+            # ✅ CORRIGIDO: Usar GEMINI_MODEL
             conversation = Conversation.objects.create(
                 user=user,
                 conversation_type=conversation_type,
-                ai_model_used=getattr(settings, 'OPENAI_MODEL', 'gpt-3.5-turbo')
+                ai_model_used=getattr(settings, 'GEMINI_MODEL', 'gemini-2.0-flash-exp')
             )
             
-            # Carregar contexto inicial do usuário
             self._initialize_conversation_context(conversation)
             
-            # Primeira mensagem da IA se não fornecida pelo usuário
             if not initial_message:
                 welcome_response = self._generate_welcome_message(conversation)
                 if welcome_response:
@@ -71,7 +67,6 @@ class ChatService:
                         confidence_score=welcome_response.get('confidence', 0.8)
                     )
             else:
-                # Processar mensagem inicial do usuário
                 user_message = self._save_user_message(conversation, initial_message)
                 ai_response = self.process_user_message(conversation.id, initial_message)
             
@@ -92,37 +87,30 @@ class ChatService:
             }
     
     def process_user_message(self, conversation_id: int, message: str) -> Dict:
-        """
-        Processa mensagem do usuário e gera resposta da IA
-        """
+        """Processa mensagem do usuário e gera resposta da IA"""
         start_time = time.time()
         
         try:
             conversation = Conversation.objects.get(id=conversation_id)
             
-            # Verificar se conversa não expirou
             if conversation.is_expired():
                 return {
                     'error': 'Conversa expirada',
                     'suggestion': 'Inicie uma nova conversa para continuar'
                 }
             
-            # Salvar mensagem do usuário
             user_message = self._save_user_message(conversation, message)
             
-            # Detectar intenção e contexto
             intent_analysis = self._analyze_message_intent(message, conversation)
             user_message.intent_detected = intent_analysis.get('intent', 'general_question')
             user_message.save()
             
-            # Atualizar contexto da conversa
             self._update_conversation_context(conversation, message, intent_analysis)
             
-            # Gerar resposta da IA
+            # ✅ CORRIGIDO: Usar geração com Gemini
             ai_response = self._generate_ai_response(conversation, message, intent_analysis)
             
             if ai_response and ai_response.get('success'):
-                # Salvar resposta da IA
                 ai_message = self._save_ai_message(
                     conversation,
                     ai_response['content'],
@@ -140,10 +128,9 @@ class ChatService:
                     'response_time_ms': round((time.time() - start_time) * 1000, 2),
                     'suggested_actions': ai_response.get('suggested_actions', []),
                     'workout_references': ai_response.get('workout_references', []),
-                    'method': 'ai_powered'
+                    'method': 'gemini_ai'  # ✅ CORRIGIDO
                 }
             else:
-                # Fallback para resposta baseada em regras
                 fallback_response = self._generate_fallback_response(conversation, message, intent_analysis)
                 
                 ai_message = self._save_ai_message(
@@ -176,13 +163,10 @@ class ChatService:
             }
     
     def _initialize_conversation_context(self, conversation: Conversation):
-        """
-        Carrega contexto inicial do usuário para personalização
-        """
+        """Carrega contexto inicial do usuário para personalização"""
         try:
             user = conversation.user
             
-            # Contexto do perfil do usuário
             try:
                 profile = UserProfile.objects.get(user=user)
                 ChatContext.set_context(
@@ -204,7 +188,6 @@ class ChatService:
                     relevance=0.5
                 )
             
-            # Contexto do histórico de treinos (últimos 7 dias)
             recent_sessions = WorkoutSession.objects.filter(
                 user=user,
                 completed=True,
@@ -226,7 +209,6 @@ class ChatService:
                 relevance=0.8
             )
             
-            # Preferências conversacionais (será atualizado durante a conversa)
             ChatContext.set_context(
                 conversation, 'preferences', 'conversation_style',
                 {'preferred_response_length': 'medium', 'technical_level': 'intermediate'},
@@ -237,87 +219,26 @@ class ChatService:
             logger.error(f"Error initializing conversation context: {e}")
     
     def _analyze_message_intent(self, message: str, conversation: Conversation) -> Dict:
-        """
-        Analisa intenção da mensagem usando IA ou regras
-        """
+        """Analisa intenção da mensagem usando regras (Gemini é mais caro para isso)"""
         try:
-            # Cache da análise por 1 hora
             cache_key = f"intent_analysis_{hash(message.lower())}"
             cached_intent = cache.get(cache_key)
             if cached_intent:
                 return cached_intent
             
-            # Tentar análise com IA
-            if self.ai_service.is_available:
-                ai_intent = self._ai_intent_analysis(message, conversation)
-                if ai_intent:
-                    cache.set(cache_key, ai_intent, 3600)
-                    return ai_intent
-            
-            # Fallback: análise por regras
+            # Usar análise por regras (mais eficiente)
             rule_intent = self._rule_based_intent_analysis(message)
-            cache.set(cache_key, rule_intent, 1800)  # Cache menor para fallback
+            cache.set(cache_key, rule_intent, 1800)
             return rule_intent
             
         except Exception as e:
             logger.error(f"Error analyzing message intent: {e}")
             return {'intent': 'general_question', 'confidence': 0.5}
     
-    def _ai_intent_analysis(self, message: str, conversation: Conversation) -> Optional[Dict]:
-        """
-        Análise de intenção usando IA
-        """
-        try:
-            system_prompt = """Você é um especialista em análise de intenções para conversas sobre fitness.
-Analise a mensagem e identifique a intenção principal, respondendo APENAS em formato JSON."""
-            
-            user_prompt = f"""
-Analise esta mensagem: "{message}"
-
-INTENÇÕES POSSÍVEIS:
-- workout_request: Pedir treino/exercícios
-- technique_question: Dúvidas sobre técnica
-- nutrition_advice: Orientação nutricional  
-- progress_inquiry: Perguntas sobre progresso
-- motivation_need: Busca motivação/encorajamento
-- equipment_question: Dúvidas sobre equipamentos
-- injury_concern: Preocupações com lesões
-- schedule_planning: Planejamento de rotina
-- general_question: Pergunta geral sobre fitness
-
-Responda em JSON:
-{{
-    "intent": "categoria_principal",
-    "confidence": 0.0-1.0,
-    "secondary_intents": ["intent1", "intent2"],
-    "keywords": ["palavra1", "palavra2"],
-    "urgency_level": "low|medium|high",
-    "requires_personalization": true/false
-}}
-"""
-            
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ]
-            
-            response = self.ai_service._make_openai_request(messages, max_tokens=200, temperature=0.3)
-            
-            if response:
-                return json.loads(response)
-                
-        except Exception as e:
-            logger.error(f"Error in AI intent analysis: {e}")
-        
-        return None
-    
     def _rule_based_intent_analysis(self, message: str) -> Dict:
-        """
-        Análise de intenção baseada em regras
-        """
+        """Análise de intenção baseada em regras"""
         message_lower = message.lower()
         
-        # Palavras-chave para cada intenção
         intent_keywords = {
             'workout_request': ['treino', 'exercício', 'workout', 'série', 'repetição', 'treinar'],
             'technique_question': ['como', 'técnica', 'forma', 'postura', 'execução', 'executar'],
@@ -329,14 +250,12 @@ Responda em JSON:
             'schedule_planning': ['rotina', 'horário', 'frequência', 'quando', 'quantas vezes']
         }
         
-        # Calcular score para cada intenção
         intent_scores = {}
         for intent, keywords in intent_keywords.items():
             score = sum([1 for keyword in keywords if keyword in message_lower])
             if score > 0:
                 intent_scores[intent] = score / len(keywords)
         
-        # Determinar intenção principal
         if intent_scores:
             main_intent = max(intent_scores, key=intent_scores.get)
             confidence = intent_scores[main_intent]
@@ -356,57 +275,48 @@ Responda em JSON:
         }
     
     def _generate_ai_response(self, conversation: Conversation, message: str, intent_analysis: Dict) -> Optional[Dict]:
-        """
-        Gera resposta usando IA com contexto completo
-        """
+        """✅ CORRIGIDO: Gera resposta usando Gemini"""
         if not self.ai_service.is_available:
+            logger.warning("Gemini AI not available, will use fallback")
             return None
         
         try:
-            # Buscar contexto da conversa
             context_data = self._build_conversation_context(conversation)
+            recent_messages = conversation.get_last_messages(6)
             
-            # Buscar mensagens recentes para contexto
-            recent_messages = conversation.get_last_messages(8)
-            conversation_history = []
+            # Construir histórico de conversa
+            conversation_history = ""
             for msg in reversed(recent_messages):
-                conversation_history.append({
-                    'role': 'user' if msg.message_type == 'user' else 'assistant',
-                    'content': msg.content
-                })
+                role = "Usuário" if msg.message_type == 'user' else "Alex"
+                conversation_history += f"{role}: {msg.content}\n"
             
-            # Prompt otimizado para chat fitness
-            system_prompt = self._build_fitness_chat_system_prompt(intent_analysis, context_data)
+            # Prompt otimizado para Gemini
+            system_context = self._build_fitness_chat_system_prompt(intent_analysis, context_data)
             
-            # Construir mensagens para IA
-            messages = [{"role": "system", "content": system_prompt}]
+            full_prompt = f"""{system_context}
+
+HISTÓRICO DA CONVERSA:
+{conversation_history}
+
+MENSAGEM ATUAL DO USUÁRIO:
+{message}
+
+Responda de forma natural, personalizada e útil. Máximo 200 palavras."""
             
-            # Adicionar histórico da conversa (limitado)
-            messages.extend(conversation_history[-6:])  # Últimas 6 mensagens
-            
-            # Mensagem atual do usuário
-            messages.append({"role": "user", "content": message})
-            
-            response = self.ai_service._make_openai_request(
-                messages, 
-                max_tokens=500,  # Respostas mais conversacionais
-                temperature=0.7
-            )
+            # ✅ USAR MÉTODO CORRETO DO GEMINI
+            response = self.ai_service._make_gemini_request(full_prompt)
             
             if response:
-                # Processar resposta para extrair ações e referências
                 processed_response = self._process_ai_response(response, intent_analysis)
                 return processed_response
             
         except Exception as e:
-            logger.error(f"Error generating AI response: {e}")
+            logger.error(f"Error generating Gemini AI response: {e}")
         
         return None
     
     def _build_fitness_chat_system_prompt(self, intent_analysis: Dict, context_data: Dict) -> str:
-        """
-        Constrói prompt de sistema otimizado para chat fitness
-        """
+        """Constrói prompt de sistema otimizado para chat fitness"""
         user_profile = context_data.get('user_profile', {})
         workout_history = context_data.get('workout_history', {})
         
@@ -426,14 +336,12 @@ DIRETRIZES DE RESPOSTA:
 - Sempre priorize a segurança
 - Adapte ao nível do usuário"""
         
-        # Adicionar contexto específico
         if user_profile.get('goal'):
             base_prompt += f"\n\nOBJETIVO DO USUÁRIO: {user_profile['goal']}"
         
         if user_profile.get('activity_level'):
             base_prompt += f"\nNÍVEL ATUAL: {user_profile['activity_level']}"
         
-        # Contexto baseado na intenção
         intent_contexts = {
             'workout_request': "\nFOCO: Recomende exercícios seguros e progressivos. Sempre inclua aquecimento e alongamento.",
             'technique_question': "\nFOCO: Explique técnica com clareza, enfatize segurança e sugira progressões.",
@@ -455,18 +363,15 @@ DIRETRIZES DE RESPOSTA:
         return base_prompt
     
     def _process_ai_response(self, response: str, intent_analysis: Dict) -> Dict:
-        """
-        Processa resposta da IA para extrair metadados úteis
-        """
+        """Processa resposta da IA para extrair metadados úteis"""
         processed = {
             'success': True,
             'content': response,
-            'confidence_score': 0.8,
+            'confidence_score': 0.85,  # Gemini é muito confiável
             'suggested_actions': [],
             'workout_references': []
         }
         
-        # Detectar ações sugeridas na resposta
         response_lower = response.lower()
         
         action_patterns = {
@@ -481,8 +386,6 @@ DIRETRIZES DE RESPOSTA:
             if any(pattern in response_lower for pattern in patterns):
                 processed['suggested_actions'].append(action)
         
-        # Detectar referências a exercícios/treinos específicos
-        # (Pode ser expandido com NLP mais sofisticado)
         exercise_mentions = []
         common_exercises = ['agachamento', 'flexão', 'corrida', 'caminhada', 'prancha', 'abdominais']
         
@@ -495,9 +398,7 @@ DIRETRIZES DE RESPOSTA:
         return processed
     
     def _generate_fallback_response(self, conversation: Conversation, message: str, intent_analysis: Dict) -> str:
-        """
-        Gera resposta baseada em regras quando IA não está disponível
-        """
+        """Gera resposta baseada em regras quando IA não está disponível"""
         intent = intent_analysis.get('intent', 'general_question')
         user_name = conversation.user.first_name or 'amigo(a)'
         
@@ -520,17 +421,15 @@ DIRETRIZES DE RESPOSTA:
         return fallback_responses.get(intent, fallback_responses['general_question'])
     
     def _generate_welcome_message(self, conversation: Conversation) -> Optional[Dict]:
-        """
-        Gera mensagem de boas-vindas personalizada
-        """
+        """Gera mensagem de boas-vindas personalizada"""
         try:
             user_name = conversation.user.first_name or 'atleta'
             conversation_type = conversation.conversation_type
             
-            # Tentar gerar com IA
+            # Tentar gerar com Gemini
             if self.ai_service.is_available:
                 context_data = self._build_conversation_context(conversation)
-                ai_welcome = self._ai_welcome_message(user_name, conversation_type, context_data)
+                ai_welcome = self._gemini_welcome_message(user_name, conversation_type, context_data)
                 if ai_welcome:
                     return ai_welcome
             
@@ -563,17 +462,12 @@ DIRETRIZES DE RESPOSTA:
                 'response_time': 50
             }
     
-    def _ai_welcome_message(self, user_name: str, conversation_type: str, context_data: Dict) -> Optional[Dict]:
-        """
-        Gera mensagem de boas-vindas usando IA
-        """
+    def _gemini_welcome_message(self, user_name: str, conversation_type: str, context_data: Dict) -> Optional[Dict]:
+        """✅ CORRIGIDO: Gera mensagem de boas-vindas usando Gemini"""
         try:
             user_profile = context_data.get('user_profile', {})
             
-            system_prompt = "Você é Alex, um personal trainer virtual amigável. Crie uma mensagem de boas-vindas personalizada e motivadora para iniciar uma conversa sobre fitness."
-            
-            user_prompt = f"""
-Crie mensagem de boas-vindas para {user_name}.
+            prompt = f"""Crie uma mensagem de boas-vindas personalizada e motivadora para {user_name}.
 
 TIPO DE CONVERSA: {conversation_type}
 PERFIL: {user_profile.get('goal', 'não informado')}
@@ -586,15 +480,11 @@ REQUISITOS:
 - Relacione com o tipo de conversa
 - Termine com pergunta envolvente
 - Use 1-2 emojis apropriados
-"""
-            
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt}
-            ]
+
+Você é Alex, um personal trainer virtual. Responda apenas com a mensagem, sem formatação extra."""
             
             start_time = time.time()
-            response = self.ai_service._make_openai_request(messages, max_tokens=150, temperature=0.8)
+            response = self.ai_service._make_gemini_request(prompt)
             
             if response:
                 return {
@@ -604,7 +494,7 @@ REQUISITOS:
                 }
                 
         except Exception as e:
-            logger.error(f"Error generating AI welcome message: {e}")
+            logger.error(f"Error generating Gemini welcome message: {e}")
         
         return None
     
@@ -620,15 +510,15 @@ REQUISITOS:
     def _save_ai_message(self, conversation: Conversation, content: str, 
                         response_time_ms: int = 0, confidence_score: float = 0.8,
                         intent: str = None) -> Message:
-        """Salva mensagem da IA com metadados"""
+        """✅ CORRIGIDO: Salva mensagem da IA com modelo Gemini"""
         return Message.objects.create(
             conversation=conversation,
             message_type='ai',
             content=content,
             confidence_score=confidence_score,
-            ai_model_version=getattr(settings, 'OPENAI_MODEL', 'gpt-3.5-turbo'),
+            ai_model_version=getattr(settings, 'GEMINI_MODEL', 'gemini-2.0-flash-exp'),  # ✅ CORRIGIDO
             response_time_ms=response_time_ms,
-            tokens_used=len(content.split()) * 1.3,  # Estimativa aproximada
+            tokens_used=len(content.split()) * 1.3,
             intent_detected=intent,
             status='delivered'
         )
@@ -636,8 +526,6 @@ REQUISITOS:
     def _build_conversation_context(self, conversation: Conversation) -> Dict:
         """Constrói contexto completo da conversa"""
         context_data = {}
-        
-        # Buscar todos os contextos ativos
         contexts = ChatContext.get_context(conversation)
         
         for context in contexts:
@@ -651,7 +539,6 @@ REQUISITOS:
     def _update_conversation_context(self, conversation: Conversation, message: str, intent_analysis: Dict):
         """Atualiza contexto da conversa baseado na mensagem atual"""
         try:
-            # Atualizar preferências conversacionais
             message_length = len(message.split())
             if message_length > 20:
                 ChatContext.set_context(
@@ -660,7 +547,6 @@ REQUISITOS:
                     relevance=0.7
                 )
             
-            # Atualizar tópicos de interesse
             intent = intent_analysis.get('intent')
             if intent:
                 current_topics = ChatContext.get_context(
@@ -671,7 +557,7 @@ REQUISITOS:
                     topics = current_topics.context_value.get('topics', [])
                     if intent not in topics:
                         topics.append(intent)
-                        topics = topics[-5:]  # Manter últimos 5 tópicos
+                        topics = topics[-5:]
                     
                     ChatContext.set_context(
                         conversation, 'preferences', 'topics_of_interest',

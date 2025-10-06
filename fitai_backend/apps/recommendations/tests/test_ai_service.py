@@ -1,4 +1,5 @@
 # apps/recommendations/tests/test_ai_service.py
+# VERSÃO ATUALIZADA PARA GOOGLE GEMINI
 import json
 from unittest.mock import Mock, patch, MagicMock
 from django.test import TestCase, override_settings
@@ -11,11 +12,11 @@ from apps.recommendations.services.ai_service import AIService
 
 
 class AIServiceTestCase(TestCase):
-    """Testes abrangentes para o AIService"""
+    """Testes abrangentes para o AIService com Gemini"""
     
     def setUp(self):
         """Setup para testes"""
-        cache.clear()  # Limpar cache entre testes
+        cache.clear()
         
         # Criar usuário de teste
         self.user = User.objects.create_user(
@@ -35,7 +36,7 @@ class AIServiceTestCase(TestCase):
             weight=80
         )
         
-        # Criar algumas sessões para contexto
+        # Criar sessões para contexto
         for i in range(3):
             WorkoutSession.objects.create(
                 user=self.user,
@@ -50,46 +51,48 @@ class AIServiceTestCase(TestCase):
         cache.clear()
     
     def test_initialization_without_api_key(self):
-        """Testa inicialização sem API key"""
-        with override_settings(OPENAI_API_KEY=''):
+        """Testa inicialização sem API key do Gemini"""
+        with override_settings(GEMINI_API_KEY=''):
             ai_service = AIService()
             self.assertFalse(ai_service.is_available)
-            self.assertIsNone(ai_service.client)
+            self.assertIsNone(ai_service.model)
     
-    @patch('apps.recommendations.services.ai_service.openai.OpenAI')
-    def test_initialization_with_api_key(self, mock_openai):
-        """Testa inicialização com API key válida"""
-        mock_client = Mock()
-        mock_openai.return_value = mock_client
+    @patch('google.generativeai.configure')
+    @patch('google.generativeai.GenerativeModel')
+    def test_initialization_with_api_key(self, mock_model, mock_configure):
+        """Testa inicialização com API key válida do Gemini"""
+        # Mock do modelo Gemini
+        mock_gemini_model = Mock()
+        mock_model.return_value = mock_gemini_model
         
         # Mock do teste de conectividade
         mock_response = Mock()
-        mock_response.choices = [Mock()]
-        mock_response.choices[0].message.content = "Test"
-        mock_client.chat.completions.create.return_value = mock_response
+        mock_response.text = "Test"
+        mock_gemini_model.generate_content.return_value = mock_response
         
-        with override_settings(OPENAI_API_KEY='test-key'):
+        with override_settings(GEMINI_API_KEY='test-key'):
             ai_service = AIService()
             ai_service._test_api_connection = Mock(return_value=True)
             ai_service._initialize_client()
             
             self.assertTrue(ai_service.is_available)
-            self.assertIsNotNone(ai_service.client)
+            self.assertIsNotNone(ai_service.model)
+            mock_configure.assert_called_once_with(api_key='test-key')
     
-    def test_rate_limiting(self):
-        """Testa sistema de rate limiting"""
+    def test_rate_limiting_gemini(self):
+        """Testa rate limiting do Gemini (15 req/min)"""
         ai_service = AIService()
         
-        # Simular 50 requisições (limite)
-        rate_limit_data = {"count": 50, "reset_time": 0}
-        cache.set(ai_service.rate_limit_cache_key, rate_limit_data, 3600)
+        # Simular 15 requisições (limite do Gemini)
+        rate_limit_data = {"count": 15, "reset_time": 0}
+        cache.set(ai_service.rate_limit_cache_key, rate_limit_data, 60)
         
         # Deve retornar False (limite atingido)
         self.assertFalse(ai_service._check_rate_limit())
         
         # Resetar contador
         rate_limit_data = {"count": 0, "reset_time": 0}
-        cache.set(ai_service.rate_limit_cache_key, rate_limit_data, 3600)
+        cache.set(ai_service.rate_limit_cache_key, rate_limit_data, 60)
         
         # Deve retornar True
         self.assertTrue(ai_service._check_rate_limit())
@@ -125,6 +128,12 @@ class AIServiceTestCase(TestCase):
                     'sets': 4,
                     'reps': '15',
                     'rest_seconds': 60
+                },
+                {
+                    'name': 'Plank',
+                    'sets': 3,
+                    'reps': '30s',
+                    'rest_seconds': 30
                 }
             ]
         }
@@ -132,7 +141,7 @@ class AIServiceTestCase(TestCase):
         result = ai_service._validate_and_enhance_workout_plan(valid_plan)
         self.assertIsNotNone(result)
         self.assertIn('quality_score', result)
-        self.assertEqual(len(result['exercises']), 2)
+        self.assertEqual(len(result['exercises']), 3)
         
         # Verificar sanitização de dados
         self.assertEqual(result['exercises'][0]['sets'], 3)
@@ -153,22 +162,20 @@ class AIServiceTestCase(TestCase):
         """Testa sanitização de número de séries"""
         ai_service = AIService()
         
-        # Testes de diferentes inputs
         self.assertEqual(ai_service._sanitize_sets('3 sets'), 3)
         self.assertEqual(ai_service._sanitize_sets('10'), 6)  # Máximo 6
         self.assertEqual(ai_service._sanitize_sets(0), 1)     # Mínimo 1
-        self.assertEqual(ai_service._sanitize_sets('invalid'), 3)  # Default
-        self.assertEqual(ai_service._sanitize_sets(4.5), 4)   # Float para int
+        self.assertEqual(ai_service._sanitize_sets('invalid'), 3)
+        self.assertEqual(ai_service._sanitize_sets(4.5), 4)
     
     def test_rest_sanitization(self):
         """Testa sanitização de tempo de descanso"""
         ai_service = AIService()
         
-        # Testes de diferentes inputs
         self.assertEqual(ai_service._sanitize_rest('45 seconds'), 45)
         self.assertEqual(ai_service._sanitize_rest('300'), 180)  # Máximo 180
-        self.assertEqual(ai_service._sanitize_rest(10), 15)     # Mínimo 15
-        self.assertEqual(ai_service._sanitize_rest('invalid'), 45)  # Default
+        self.assertEqual(ai_service._sanitize_rest(10), 15)      # Mínimo 15
+        self.assertEqual(ai_service._sanitize_rest('invalid'), 45)
     
     def test_quality_score_calculation(self):
         """Testa cálculo de score de qualidade"""
@@ -213,7 +220,7 @@ class AIServiceTestCase(TestCase):
         }
         
         score = ai_service._calculate_workout_quality_score(high_quality_plan)
-        self.assertGreater(score, 80)  # Deve ter score alto
+        self.assertGreater(score, 80)
         
         # Plano de baixa qualidade
         low_quality_plan = {
@@ -224,66 +231,56 @@ class AIServiceTestCase(TestCase):
         }
         
         score = ai_service._calculate_workout_quality_score(low_quality_plan)
-        self.assertLess(score, 50)  # Deve ter score baixo
+        self.assertLess(score, 50)
     
-    @patch('apps.recommendations.services.ai_service.openai.OpenAI')
-    def test_openai_request_success(self, mock_openai):
-        """Testa requisição OpenAI bem-sucedida"""
-        # Mock do cliente OpenAI
-        mock_client = Mock()
-        mock_openai.return_value = mock_client
+    @patch('google.generativeai.GenerativeModel')
+    def test_gemini_request_success(self, mock_model):
+        """Testa requisição Gemini bem-sucedida"""
+        # Mock do modelo
+        mock_gemini_model = Mock()
+        mock_model.return_value = mock_gemini_model
         
         # Mock da resposta
         mock_response = Mock()
-        mock_response.choices = [Mock()]
-        mock_response.choices[0].message.content = "Resposta da IA"
-        mock_response.usage = Mock()
-        mock_response.usage.prompt_tokens = 10
-        mock_response.usage.completion_tokens = 20
-        mock_response.usage.total_tokens = 30
-        mock_response.model = "gpt-3.5-turbo"
+        mock_response.text = "Resposta do Gemini"
+        mock_gemini_model.generate_content.return_value = mock_response
         
-        mock_client.chat.completions.create.return_value = mock_response
-        
-        # Configurar AI Service
-        with override_settings(OPENAI_API_KEY='test-key'):
+        with override_settings(GEMINI_API_KEY='test-key'):
             ai_service = AIService()
-            ai_service.client = mock_client
+            ai_service.model = mock_gemini_model
             ai_service.is_available = True
             
-            # Fazer requisição
-            messages = [{"role": "user", "content": "Test"}]
-            result = ai_service._make_openai_request(messages)
+            result = ai_service._make_gemini_request("Test prompt")
             
-            self.assertEqual(result, "Resposta da IA")
-            mock_client.chat.completions.create.assert_called_once()
+            self.assertEqual(result, "Resposta do Gemini")
+            mock_gemini_model.generate_content.assert_called_once_with("Test prompt")
     
-    @patch('apps.recommendations.services.ai_service.openai.OpenAI')
-    def test_openai_request_rate_limit_error(self, mock_openai):
-        """Testa tratamento de erro de rate limit"""
-        import openai
+    @patch('google.generativeai.GenerativeModel')
+    def test_gemini_request_with_markdown_cleanup(self, mock_model):
+        """Testa limpeza de markdown nas respostas do Gemini"""
+        mock_gemini_model = Mock()
+        mock_model.return_value = mock_gemini_model
         
-        mock_client = Mock()
-        mock_openai.return_value = mock_client
-        mock_client.chat.completions.create.side_effect = openai.RateLimitError("Rate limit exceeded", None, None)
+        # Resposta com markdown
+        mock_response = Mock()
+        mock_response.text = '```json\n{"test": "value"}\n```'
+        mock_gemini_model.generate_content.return_value = mock_response
         
-        with override_settings(OPENAI_API_KEY='test-key'):
+        with override_settings(GEMINI_API_KEY='test-key'):
             ai_service = AIService()
-            ai_service.client = mock_client
+            ai_service.model = mock_gemini_model
             ai_service.is_available = True
             
-            messages = [{"role": "user", "content": "Test"}]
-            result = ai_service._make_openai_request(messages)
+            result = ai_service._make_gemini_request("Test")
             
-            self.assertIsNone(result)
-            # Verificar se foi marcado como temporariamente indisponível
-            self.assertTrue(cache.get("openai_temp_disabled"))
+            # Deve limpar o markdown
+            self.assertNotIn('```', result)
     
     def test_detailed_progress_collection(self):
         """Testa coleta detalhada de dados de progresso"""
         ai_service = AIService()
         
-        # Criar mais sessões para dados suficientes
+        # Criar mais sessões
         for i in range(5):
             WorkoutSession.objects.create(
                 user=self.user,
@@ -308,7 +305,7 @@ class AIServiceTestCase(TestCase):
         """Testa cálculo de score geral de progresso"""
         ai_service = AIService()
         
-        # Dados simulados de alto desempenho
+        # Alto desempenho
         high_performance_data = {
             'month_stats': {
                 'completed_sessions': 16,
@@ -323,7 +320,7 @@ class AIServiceTestCase(TestCase):
         score = ai_service._calculate_overall_progress_score(high_performance_data)
         self.assertGreater(score, 80)
         
-        # Dados simulados de baixo desempenho
+        # Baixo desempenho
         low_performance_data = {
             'month_stats': {
                 'completed_sessions': 2,
@@ -339,24 +336,21 @@ class AIServiceTestCase(TestCase):
         self.assertLess(score, 40)
     
     def test_api_usage_stats(self):
-        """Testa coleta de estatísticas de uso da API"""
+        """Testa estatísticas de uso da API Gemini"""
         ai_service = AIService()
         
-        # Simular métricas do dia
         from datetime import datetime
-        today_key = f"openai_metrics_{datetime.now().strftime('%Y-%m-%d')}"
+        today_key = f"gemini_metrics_{datetime.now().strftime('%Y-%m-%d')}"
         mock_metrics = [
             {
-                'timestamp': '2025-08-27T10:00:00',
-                'total_tokens': 100,
-                'prompt_tokens': 60,
-                'completion_tokens': 40
+                'timestamp': '2025-10-06T10:00:00',
+                'prompt_chars': 100,
+                'response_chars': 200
             },
             {
-                'timestamp': '2025-08-27T11:00:00',
-                'total_tokens': 150,
-                'prompt_tokens': 90,
-                'completion_tokens': 60
+                'timestamp': '2025-10-06T11:00:00',
+                'prompt_chars': 150,
+                'response_chars': 300
             }
         ]
         cache.set(today_key, mock_metrics, 86400)
@@ -365,12 +359,10 @@ class AIServiceTestCase(TestCase):
         
         self.assertIn('usage_today', stats)
         self.assertEqual(stats['usage_today']['requests_made'], 2)
-        self.assertEqual(stats['usage_today']['tokens_used'], 250)
         
     def test_fallback_when_ai_unavailable(self):
-        """Testa comportamento quando IA está indisponível"""
-        # AI service sem chave
-        with override_settings(OPENAI_API_KEY=''):
+        """Testa fallback quando Gemini está indisponível"""
+        with override_settings(GEMINI_API_KEY=''):
             ai_service = AIService()
             
             # Todas as funções devem retornar None
@@ -382,12 +374,14 @@ class AIServiceTestCase(TestCase):
             result = ai_service.analyze_user_progress(self.profile)
             self.assertIsNone(result)
             
-            result = ai_service.generate_motivational_content(self.profile, 'workout_start')
+            result = ai_service.generate_motivational_content(
+                self.profile, 'workout_start'
+            )
             self.assertIsNone(result)
 
 
 class AIServiceIntegrationTestCase(TestCase):
-    """Testes de integração que requerem API key real (executar manualmente)"""
+    """Testes de integração com API real do Gemini"""
     
     def setUp(self):
         """Setup para testes de integração"""
@@ -405,34 +399,36 @@ class AIServiceIntegrationTestCase(TestCase):
         )
     
     def test_real_workout_generation(self):
-        """Teste com API real - executar manualmente com API key válida"""
-        # Pular se não há API key configurada
+        """Teste com API real do Gemini - executar manualmente"""
         from django.conf import settings
-        if not settings.OPENAI_API_KEY:
-            self.skipTest("OpenAI API key not configured")
+        if not settings.GEMINI_API_KEY:
+            self.skipTest("Gemini API key not configured")
         
         ai_service = AIService()
         if not ai_service.is_available:
-            self.skipTest("OpenAI service not available")
+            self.skipTest("Gemini service not available")
         
         result = ai_service.generate_personalized_workout_plan(
             self.profile, 30, 'upper', 'intermediate'
         )
         
-        if result:  # Só testa se a API respondeu
+        if result:
             self.assertIsInstance(result, dict)
             self.assertIn('workout_name', result)
             self.assertIn('exercises', result)
             self.assertGreater(len(result['exercises']), 3)
             self.assertIn('quality_score', result)
+            print(f"\n✅ Treino gerado: {result['workout_name']}")
+            print(f"   Exercícios: {len(result['exercises'])}")
+            print(f"   Qualidade: {result['quality_score']}")
     
     def test_real_progress_analysis(self):
-        """Teste de análise de progresso com API real"""
+        """Teste de análise com API real do Gemini"""
         from django.conf import settings
-        if not settings.OPENAI_API_KEY:
-            self.skipTest("OpenAI API key not configured")
+        if not settings.GEMINI_API_KEY:
+            self.skipTest("Gemini API key not configured")
         
-        # Criar algumas sessões para análise
+        # Criar sessões para análise
         for i in range(5):
             WorkoutSession.objects.create(
                 user=self.user,
@@ -444,21 +440,49 @@ class AIServiceIntegrationTestCase(TestCase):
         
         ai_service = AIService()
         if not ai_service.is_available:
-            self.skipTest("OpenAI service not available")
+            self.skipTest("Gemini service not available")
         
         result = ai_service.analyze_user_progress(self.profile)
         
-        if result:  # Só testa se a API respondeu
+        if result:
             self.assertIsInstance(result, dict)
             self.assertIn('overall_progress', result)
             self.assertIn('analysis_metadata', result)
+            print(f"\n✅ Análise gerada: {result.get('overall_progress')}")
+    
+    def test_real_motivational_message(self):
+        """Teste de mensagem motivacional com API real"""
+        from django.conf import settings
+        if not settings.GEMINI_API_KEY:
+            self.skipTest("Gemini API key not configured")
+        
+        ai_service = AIService()
+        if not ai_service.is_available:
+            self.skipTest("Gemini service not available")
+        
+        result = ai_service.generate_motivational_content(
+            self.profile, 'workout_start'
+        )
+        
+        if result:
+            self.assertIsInstance(result, str)
+            self.assertGreater(len(result), 20)
+            self.assertLess(len(result), 250)
+            print(f"\n✅ Mensagem gerada: {result}")
 
 
-# Comando para executar testes:
-# python manage.py test apps.recommendations.tests.test_ai_service -v 2
+# ============================================================================
+# COMANDOS PARA EXECUTAR OS TESTES
+# ============================================================================
 
-# Para executar apenas testes que não precisam de API key:
+# Testes unitários (não precisam de API key):
 # python manage.py test apps.recommendations.tests.test_ai_service.AIServiceTestCase -v 2
 
-# Para executar testes de integração (com API key):
-# OPENAI_API_KEY=sua_chave python manage.py test apps.recommendations.tests.test_ai_service.AIServiceIntegrationTestCase -v 2
+# Testes de integração (COM API key do Gemini):
+# python manage.py test apps.recommendations.tests.test_ai_service.AIServiceIntegrationTestCase -v 2
+
+# Todos os testes:
+# python manage.py test apps.recommendations.tests.test_ai_service -v 2
+
+# Teste específico:
+# python manage.py test apps.recommendations.tests.test_ai_service.AIServiceTestCase.test_gemini_request_success -v 2

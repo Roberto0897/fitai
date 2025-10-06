@@ -1,4 +1,4 @@
-import openai
+import google.generativeai as genai
 import json
 import logging
 import time
@@ -15,80 +15,73 @@ logger = logging.getLogger(__name__)
 
 class AIService:
     """
-    Serviço principal de integração com IA (OpenAI)
-    Versão atualizada para OpenAI v1.12.0 com rate limiting e métricas
+    Serviço principal de integração com IA (Google Gemini)
+    Migrado de OpenAI para Gemini - mantém compatibilidade com código existente
     """
     
     def __init__(self):
-        self.client = None
+        self.model = None
         self.is_available = False
-        self.rate_limit_cache_key = "openai_rate_limit"
+        self.rate_limit_cache_key = "gemini_rate_limit"
         self._initialize_client()
     
     def _initialize_client(self):
-        """Inicializa cliente OpenAI com a nova API v1.12.0"""
+        """Inicializa cliente Gemini"""
         try:
-            if not settings.OPENAI_API_KEY or settings.OPENAI_API_KEY.strip() == '':
-                logger.warning("OpenAI API key not configured or empty")
+            if not settings.GEMINI_API_KEY or settings.GEMINI_API_KEY.strip() == '':
+                logger.warning("Gemini API key not configured or empty")
                 return
-                
-            # Nova forma de inicializar cliente OpenAI v1.12.0
-            self.client = openai.OpenAI(
-                api_key=settings.OPENAI_API_KEY,
-                timeout=30.0  # 30 segundos de timeout
+            
+            # Configurar Gemini
+            genai.configure(api_key=settings.GEMINI_API_KEY)
+            
+            # Inicializar modelo
+            self.model = genai.GenerativeModel(
+                model_name=settings.GEMINI_MODEL,
+                generation_config={
+                    'temperature': settings.GEMINI_TEMPERATURE,
+                    'max_output_tokens': settings.GEMINI_MAX_TOKENS,
+                }
             )
             
             # Teste rápido de conectividade
             if self._test_api_connection():
                 self.is_available = True
-                logger.info("OpenAI client initialized and tested successfully")
+                logger.info(f"Gemini client initialized successfully with model {settings.GEMINI_MODEL}")
             else:
-                logger.error("OpenAI API test failed")
+                logger.error("Gemini API test failed")
                 
         except Exception as e:
-            logger.error(f"Failed to initialize OpenAI client: {e}")
+            logger.error(f"Failed to initialize Gemini client: {e}")
             self.is_available = False
     
     def _test_api_connection(self) -> bool:
-        """Testa conexão com a API OpenAI sem gastar tokens desnecessários"""
+        """Testa conexão com a API Gemini"""
         try:
-            if not self.client:
+            if not self.model:
                 return False
-                
-            # Fazer uma requisição simples para testar
-            response = self.client.chat.completions.create(
-                model=settings.OPENAI_MODEL,
-                messages=[
-                    {"role": "user", "content": "Test"}
-                ],
-                max_tokens=1,
-                temperature=0
-            )
-            return True
             
-        except openai.AuthenticationError:
-            logger.error("OpenAI API key is invalid")
-            return False
-        except openai.RateLimitError:
-            logger.warning("OpenAI rate limit reached during test")
-            return True  # API funciona, mas tem limite
+            # Fazer uma requisição simples para testar
+            response = self.model.generate_content("Test")
+            return bool(response.text)
+            
         except Exception as e:
-            logger.error(f"OpenAI API test failed: {e}")
+            logger.error(f"Gemini API test failed: {e}")
             return False
     
     def _check_rate_limit(self) -> bool:
-        """Verifica se ainda podemos fazer requisições (rate limiting)"""
+        """Verifica rate limiting (Gemini tem limites mais generosos)"""
         rate_limit_data = cache.get(self.rate_limit_cache_key, {"count": 0, "reset_time": time.time()})
         
         current_time = time.time()
         
-        # Reset contador a cada hora
-        if current_time - rate_limit_data["reset_time"] > 3600:
+        # Reset contador a cada minuto para Gemini
+        if current_time - rate_limit_data["reset_time"] > 60:
             rate_limit_data = {"count": 0, "reset_time": current_time}
         
-        # Limite de 50 requisições por hora para ser conservador
-        if rate_limit_data["count"] >= 50:
-            logger.warning("OpenAI rate limit reached locally")
+        # Limite do Gemini: 15 requisições por minuto no free tier
+        if rate_limit_data["count"] >= settings.GEMINI_RATE_LIMIT_PER_MINUTE:
+            logger.warning("Gemini rate limit reached locally")
             return False
             
         return True
@@ -97,79 +90,57 @@ class AIService:
         """Atualiza contador de rate limiting"""
         rate_limit_data = cache.get(self.rate_limit_cache_key, {"count": 0, "reset_time": time.time()})
         rate_limit_data["count"] += 1
-        cache.set(self.rate_limit_cache_key, rate_limit_data, 3600)  # Cache por 1 hora
+        cache.set(self.rate_limit_cache_key, rate_limit_data, 60)  # Cache por 1 minuto
     
-    def _make_openai_request(self, messages: List[Dict], max_tokens: int = None, 
-                           temperature: float = None) -> Optional[str]:
-        """Faz requisição segura para OpenAI com nova API v1.12.0"""
-        if not self.is_available or not self.client:
+    def _make_gemini_request(self, prompt: str) -> Optional[str]:
+        """Faz requisição segura para Gemini"""
+        if not self.is_available or not self.model:
             return None
         
         # Verificar rate limiting
         if not self._check_rate_limit():
-            logger.warning("Skipping OpenAI request due to rate limiting")
+            logger.warning("Skipping Gemini request due to rate limiting")
             return None
             
         try:
-            # Usar nova API do OpenAI v1.12.0
-            response = self.client.chat.completions.create(
-                model=settings.OPENAI_MODEL,
-                messages=messages,
-                max_tokens=max_tokens or settings.OPENAI_MAX_TOKENS,
-                temperature=temperature or settings.OPENAI_TEMPERATURE,
-                timeout=30  # 30 segundos
-            )
+            # Fazer requisição
+            response = self.model.generate_content(prompt)
             
             # Atualizar contador de rate limit
             self._update_rate_limit_counter()
             
             # Extrair resposta
-            content = response.choices[0].message.content
+            content = response.text
             
             # Log métricas
-            self._log_api_metrics(response, len(messages))
+            self._log_api_metrics(response, len(prompt))
             
             return content.strip() if content else None
             
-        except openai.RateLimitError as e:
-            logger.error(f"OpenAI rate limit exceeded: {e}")
-            # Marcar como indisponível temporariamente
-            cache.set("openai_temp_disabled", True, 300)  # 5 minutos
-            return None
-            
-        except openai.AuthenticationError as e:
-            logger.error(f"OpenAI authentication failed: {e}")
-            self.is_available = False
-            return None
-            
-        except openai.APIError as e:
-            logger.error(f"OpenAI API error: {e}")
-            return None
-            
         except Exception as e:
-            logger.error(f"Unexpected error in OpenAI request: {e}")
+            logger.error(f"Gemini API error: {e}")
+            if "quota" in str(e).lower() or "rate" in str(e).lower():
+                # Marcar como indisponível temporariamente
+                cache.set("gemini_temp_disabled", True, 60)  # 1 minuto
             return None
     
-    def _log_api_metrics(self, response, message_count: int):
+    def _log_api_metrics(self, response, prompt_length: int):
         """Log métricas da API para monitoramento"""
         try:
-            usage = response.usage
             metrics = {
                 "timestamp": datetime.now().isoformat(),
-                "model": response.model,
-                "prompt_tokens": usage.prompt_tokens if usage else 0,
-                "completion_tokens": usage.completion_tokens if usage else 0,
-                "total_tokens": usage.total_tokens if usage else 0,
-                "message_count": message_count
+                "model": settings.GEMINI_MODEL,
+                "prompt_chars": prompt_length,
+                "response_chars": len(response.text) if response.text else 0,
             }
             
-            # Armazenar métricas em cache para dashboard futuro
-            daily_key = f"openai_metrics_{datetime.now().strftime('%Y-%m-%d')}"
+            # Armazenar métricas em cache
+            daily_key = f"gemini_metrics_{datetime.now().strftime('%Y-%m-%d')}"
             daily_metrics = cache.get(daily_key, [])
             daily_metrics.append(metrics)
             cache.set(daily_key, daily_metrics, 86400)  # 24 horas
             
-            logger.info(f"OpenAI API used {usage.total_tokens if usage else 0} tokens")
+            logger.info(f"Gemini API used {metrics['response_chars']} chars in response")
             
         except Exception as e:
             logger.error(f"Error logging API metrics: {e}")
@@ -177,32 +148,31 @@ class AIService:
     def generate_personalized_workout_plan(self, user_profile: UserProfile, 
                                          duration: int, focus: str, difficulty: str) -> Optional[Dict]:
         """
-        Gera plano de treino personalizado usando IA com prompts otimizados
+        Gera plano de treino personalizado usando Gemini
         """
-        if not self.is_available or cache.get("openai_temp_disabled"):
+        if not self.is_available or cache.get("gemini_temp_disabled"):
             return None
         
         # Buscar histórico do usuário para contexto
         user_history = self._get_user_context(user_profile.user)
         
-        # Prompt otimizado e mais específico
-        system_prompt = """Você é um personal trainer expert com 15 anos de experiência. 
-Crie planos de treino seguros, eficazes e personalizados. 
-Sempre responda em JSON válido estruturado. Priorize segurança e progressão adequada."""
-        
-        user_prompt = self._build_optimized_workout_prompt(
+        # Prompt otimizado para Gemini
+        prompt = self._build_optimized_workout_prompt(
             user_profile, duration, focus, difficulty, user_history
         )
         
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ]
-        
-        response = self._make_openai_request(messages, max_tokens=1000, temperature=0.7)
+        response = self._make_gemini_request(prompt)
         
         if response:
             try:
+                # Gemini às vezes retorna com markdown, limpar
+                response = response.strip()
+                if response.startswith('```json'):
+                    response = response[7:]
+                if response.endswith('```'):
+                    response = response[:-3]
+                response = response.strip()
+                
                 # Parsear e validar JSON
                 workout_plan = json.loads(response)
                 validated_plan = self._validate_and_enhance_workout_plan(workout_plan)
@@ -211,7 +181,7 @@ Sempre responda em JSON válido estruturado. Priorize segurança e progressão a
                     # Adicionar metadados de geração
                     validated_plan["ai_metadata"] = {
                         "generated_at": datetime.now().isoformat(),
-                        "model_used": settings.OPENAI_MODEL,
+                        "model_used": settings.GEMINI_MODEL,
                         "personalization_factors": [
                             f"goal: {user_profile.goal}",
                             f"level: {user_profile.activity_level}",
@@ -223,33 +193,32 @@ Sempre responda em JSON válido estruturado. Priorize segurança e progressão a
                 return validated_plan
                 
             except json.JSONDecodeError as e:
-                logger.error(f"Failed to parse OpenAI workout response as JSON: {e}")
+                logger.error(f"Failed to parse Gemini workout response as JSON: {e}")
                 logger.error(f"Response was: {response[:200]}...")
         
         return None
     
     def _build_optimized_workout_prompt(self, profile: UserProfile, duration: int, 
                                       focus: str, difficulty: str, history: Dict) -> str:
-        """Prompt otimizado para melhor qualidade das respostas"""
-        return f"""
-CRIAR PLANO DE TREINO PERSONALIZADO
+        """Prompt otimizado para Gemini"""
+        return f"""Você é um personal trainer expert. Crie um plano de treino personalizado.
 
 PERFIL DO USUÁRIO:
 - Nome: {profile.user.first_name or 'Usuário'}
-- Objetivo Principal: {profile.goal or 'fitness geral'}
-- Nível de Atividade: {profile.activity_level or 'iniciante'}
+- Objetivo: {profile.goal or 'fitness geral'}
+- Nível: {profile.activity_level or 'iniciante'}
 - Idade: {profile.age or 'não informado'}
-- Histórico Recente: {history.get('recent_activity', 'iniciando jornada fitness')}
+- Histórico: {history.get('recent_activity', 'iniciando')}
 
-ESPECIFICAÇÕES DO TREINO:
-- Duração Total: {duration} minutos
-- Foco Principal: {focus}
-- Nível de Dificuldade: {difficulty}
+ESPECIFICAÇÕES:
+- Duração: {duration} minutos
+- Foco: {focus}
+- Dificuldade: {difficulty}
 
-FORMATO DE RESPOSTA OBRIGATÓRIO (JSON):
+RESPONDA APENAS COM JSON VÁLIDO (sem markdown):
 {{
-    "workout_name": "Nome motivador e específico",
-    "description": "Descrição inspiradora do treino (máx 100 palavras)",
+    "workout_name": "Nome motivador",
+    "description": "Descrição inspiradora (máx 100 palavras)",
     "estimated_duration": {duration},
     "difficulty_level": "{difficulty}",
     "target_focus": "{focus}",
@@ -257,45 +226,39 @@ FORMATO DE RESPOSTA OBRIGATÓRIO (JSON):
         {{
             "order": 1,
             "name": "Nome do exercício",
-            "muscle_group": "grupo muscular principal",
-            "sets": número_de_séries,
-            "reps": "repetições ou tempo",
-            "rest_seconds": segundos_de_descanso,
-            "instructions": "instruções claras e seguras",
-            "modifications": "adaptações para diferentes níveis",
-            "safety_tips": "dicas importantes de segurança"
+            "muscle_group": "grupo muscular",
+            "sets": 3,
+            "reps": "12-15",
+            "rest_seconds": 45,
+            "instructions": "instruções claras",
+            "modifications": "adaptações",
+            "safety_tips": "dicas de segurança"
         }}
     ],
     "warm_up": {{
         "duration_minutes": 5,
-        "exercises": ["exercício 1", "exercício 2", "exercício 3"],
-        "instructions": "instruções detalhadas de aquecimento"
+        "exercises": ["exercício 1", "exercício 2"],
+        "instructions": "instruções de aquecimento"
     }},
     "cool_down": {{
         "duration_minutes": 5,
-        "exercises": ["alongamento 1", "alongamento 2", "alongamento 3"],
-        "instructions": "instruções de relaxamento e alongamento"
+        "exercises": ["alongamento 1", "alongamento 2"],
+        "instructions": "instruções de relaxamento"
     }},
     "ai_coaching_tips": [
-        "dica técnica específica",
-        "motivação personalizada", 
-        "progressão sugerida"
+        "dica técnica",
+        "motivação personalizada"
     ]
 }}
 
-REQUISITOS OBRIGATÓRIOS:
-1. Incluir 6-10 exercícios apropriados ao nível
-2. Séries/repetições adequadas ao objetivo
-3. Tempos de descanso otimizados
-4. Instruções de segurança claras
-5. Progressão lógica dos exercícios
-6. Aquecimento e alongamento específicos
-
-Gere um treino seguro, eficaz e motivador!
-"""
+IMPORTANTE: 
+- Incluir 6-10 exercícios apropriados
+- Instruções de segurança claras
+- Progressão lógica dos exercícios
+- Responda APENAS com o JSON, sem texto adicional"""
     
     def _validate_and_enhance_workout_plan(self, plan: Dict) -> Optional[Dict]:
-        """Validação robusta e melhorias no plano de treino"""
+        """Validação robusta do plano de treino"""
         try:
             # Validações obrigatórias
             required_fields = ['workout_name', 'exercises', 'estimated_duration']
@@ -308,7 +271,7 @@ Gere um treino seguro, eficaz e motivador!
                 logger.error("Invalid exercises list in workout plan")
                 return None
             
-            # Melhorar e sanitizar exercícios
+            # Melhorar exercícios
             enhanced_exercises = []
             for i, exercise in enumerate(plan['exercises'], 1):
                 enhanced_exercise = {
@@ -352,7 +315,6 @@ Gere um treino seguro, eficaz e motivador!
         """Sanitiza número de séries"""
         try:
             if isinstance(sets, str):
-                # Extrair número da string
                 import re
                 numbers = re.findall(r'\d+', sets)
                 if numbers:
@@ -364,7 +326,6 @@ Gere um treino seguro, eficaz e motivador!
             else:
                 sets = 3
             
-            # Limitar entre 1 e 6 séries
             return max(1, min(6, sets))
         except:
             return 3
@@ -384,16 +345,14 @@ Gere um treino seguro, eficaz e motivador!
             else:
                 rest = 45
             
-            # Limitar entre 15 e 180 segundos
             return max(15, min(180, rest))
         except:
             return 45
     
     def _calculate_workout_quality_score(self, plan: Dict) -> float:
-        """Calcula score de qualidade do treino gerado (0-100)"""
+        """Calcula score de qualidade do treino (0-100)"""
         score = 0
         
-        # Número adequado de exercícios (20 pontos)
         exercise_count = len(plan.get('exercises', []))
         if 6 <= exercise_count <= 10:
             score += 20
@@ -402,27 +361,23 @@ Gere um treino seguro, eficaz e motivador!
         else:
             score += 5
         
-        # Presença de aquecimento e alongamento (20 pontos)
         if plan.get('warm_up'):
             score += 10
         if plan.get('cool_down'):
             score += 10
         
-        # Qualidade das instruções (20 pontos)
         instruction_quality = sum([
             1 for ex in plan.get('exercises', [])
             if len(ex.get('instructions', '')) > 20
         ])
         score += min(20, instruction_quality * 2)
         
-        # Variedade de grupos musculares (20 pontos)
         muscle_groups = set([
             ex.get('muscle_group', '') 
             for ex in plan.get('exercises', [])
         ])
         score += min(20, len(muscle_groups) * 4)
         
-        # Presença de dicas de segurança (20 pontos)
         safety_tips = sum([
             1 for ex in plan.get('exercises', [])
             if ex.get('safety_tips') and len(ex.get('safety_tips', '')) > 10
@@ -432,10 +387,8 @@ Gere um treino seguro, eficaz e motivador!
         return round(score, 1)
     
     def analyze_user_progress(self, user_profile: UserProfile) -> Optional[Dict]:
-        """
-        Análise de progresso com prompts otimizados e validação robusta
-        """
-        if not self.is_available or cache.get("openai_temp_disabled"):
+        """Análise de progresso com Gemini"""
+        if not self.is_available or cache.get("gemini_temp_disabled"):
             return None
         
         # Coletar dados detalhados
@@ -444,37 +397,35 @@ Gere um treino seguro, eficaz e motivador!
         if not user_data['has_sufficient_data']:
             return None
         
-        # Prompt otimizado para análise
-        system_prompt = """Você é um especialista em análise de performance e fisiologia do exercício. 
-Analise os dados fornecidos e gere insights precisos e acionáveis em formato JSON estruturado."""
+        # Prompt para análise
+        prompt = self._build_progress_analysis_prompt(user_profile, user_data)
         
-        user_prompt = self._build_progress_analysis_prompt(user_profile, user_data)
-        
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ]
-        
-        response = self._make_openai_request(messages, max_tokens=800, temperature=0.6)
+        response = self._make_gemini_request(prompt)
         
         if response:
             try:
+                # Limpar markdown
+                response = response.strip()
+                if response.startswith('```json'):
+                    response = response[7:]
+                if response.endswith('```'):
+                    response = response[:-3]
+                response = response.strip()
+                
                 analysis = json.loads(response)
-                # Validar e enriquecer análise
                 return self._enhance_progress_analysis(analysis, user_data)
             except json.JSONDecodeError:
-                logger.error("Failed to parse OpenAI progress analysis as JSON")
+                logger.error("Failed to parse Gemini progress analysis as JSON")
         
         return None
     
     def _collect_detailed_user_progress(self, user) -> Dict:
-        """Coleta dados mais detalhados para análise"""
+        """Coleta dados detalhados para análise"""
         try:
             from datetime import timedelta
             from django.utils import timezone
             from django.db.models import Avg, Count, Sum
             
-            # Diferentes períodos de análise
             now = timezone.now()
             periods = {
                 'week': now - timedelta(days=7),
@@ -496,7 +447,6 @@ Analise os dados fornecidos e gere insights precisos e acionáveis em formato JS
                 if total_sessions >= (3 if period_name == 'week' else 5):
                     data['has_sufficient_data'] = True
                 
-                # Estatísticas detalhadas
                 data[f'{period_name}_stats'] = {
                     'total_sessions': total_sessions,
                     'completed_sessions': completed_sessions.count(),
@@ -510,21 +460,7 @@ Analise os dados fornecidos e gere insights precisos e acionáveis em formato JS
                         Avg('user_rating')
                     )['user_rating__avg'] or 0
                 }
-                
-                # Análise de exercícios
-                exercise_logs = ExerciseLog.objects.filter(
-                    session__in=completed_sessions,
-                    completed=True
-                )
-                
-                muscle_group_distribution = {}
-                for log in exercise_logs:
-                    group = log.workout_exercise.exercise.muscle_group
-                    muscle_group_distribution[group] = muscle_group_distribution.get(group, 0) + 1
-                
-                data[f'{period_name}_muscle_groups'] = muscle_group_distribution
             
-            # Tendências e padrões
             data['trends'] = self._calculate_user_trends(user)
             
             return data
@@ -539,7 +475,6 @@ Analise os dados fornecidos e gere insights precisos e acionáveis em formato JS
             from datetime import timedelta
             from django.utils import timezone
             
-            # Últimas 4 semanas para análise de tendência
             weeks_data = []
             for week in range(4):
                 start_date = timezone.now() - timedelta(days=(week + 1) * 7)
@@ -553,7 +488,6 @@ Analise os dados fornecidos e gere insights precisos e acionáveis em formato JS
                 
                 weeks_data.append(week_sessions)
             
-            # Calcular tendência
             if len(weeks_data) >= 3:
                 recent_avg = sum(weeks_data[:2]) / 2
                 older_avg = sum(weeks_data[2:]) / 2
@@ -579,22 +513,19 @@ Analise os dados fornecidos e gere insights precisos e acionáveis em formato JS
     def _enhance_progress_analysis(self, analysis: Dict, user_data: Dict) -> Dict:
         """Enriquece análise com dados calculados"""
         try:
-            # Adicionar metadados
             analysis['analysis_metadata'] = {
                 'generated_at': datetime.now().isoformat(),
                 'data_period': 'last_30_days',
-                'ai_model': settings.OPENAI_MODEL,
+                'ai_model': settings.GEMINI_MODEL,
                 'confidence_level': 'high' if user_data['has_sufficient_data'] else 'medium'
             }
             
-            # Adicionar métricas calculadas
             analysis['calculated_metrics'] = {
                 'consistency_score': user_data.get('trends', {}).get('consistency_score', 0),
                 'improvement_trend': user_data.get('trends', {}).get('trend', 'indeterminado'),
                 'total_workouts_month': user_data.get('month_stats', {}).get('completed_sessions', 0)
             }
             
-            # Score geral de progresso
             analysis['overall_progress_score'] = self._calculate_overall_progress_score(user_data)
             
             return analysis
@@ -609,26 +540,22 @@ Analise os dados fornecidos e gere insights precisos e acionáveis em formato JS
             score = 0
             month_stats = user_data.get('month_stats', {})
             
-            # Frequência (40 pontos)
             completed_sessions = month_stats.get('completed_sessions', 0)
-            if completed_sessions >= 16:  # 4+ por semana
+            if completed_sessions >= 16:
                 score += 40
-            elif completed_sessions >= 12:  # 3 por semana
+            elif completed_sessions >= 12:
                 score += 30
-            elif completed_sessions >= 8:  # 2 por semana
+            elif completed_sessions >= 8:
                 score += 20
-            elif completed_sessions >= 4:  # 1 por semana
+            elif completed_sessions >= 4:
                 score += 10
             
-            # Taxa de conclusão (30 pontos)
             completion_rate = month_stats.get('completion_rate', 0)
             score += min(30, completion_rate * 0.3)
             
-            # Satisfação (20 pontos)
             avg_rating = month_stats.get('avg_rating', 0)
             score += min(20, avg_rating * 4)
             
-            # Consistência (10 pontos)
             consistency = user_data.get('trends', {}).get('consistency_score', 0)
             score += consistency * 10
             
@@ -638,52 +565,34 @@ Analise os dados fornecidos e gere insights precisos e acionáveis em formato JS
             return 50.0
     
     def generate_motivational_content(self, user_profile: UserProfile, context: str) -> Optional[str]:
-        """
-        Gera conteúdo motivacional com prompts otimizados
-        """
-        if not self.is_available or cache.get("openai_temp_disabled"):
+        """Gera conteúdo motivacional com Gemini"""
+        if not self.is_available or cache.get("gemini_temp_disabled"):
             return None
         
         user_context = self._get_user_context(user_profile.user)
         
         # Prompt otimizado para motivação
-        system_prompt = """Você é um coach motivacional especialista em fitness e bem-estar. 
-Crie mensagens inspiradoras, personalizadas e genuínas. Evite clichês e seja autêntico."""
-        
-        user_prompt = f"""
-Crie uma mensagem motivacional personalizada para {user_profile.user.first_name or 'o usuário'}.
+        prompt = f"""Você é um coach motivacional especialista em fitness. Crie uma mensagem inspiradora e personalizada.
 
 CONTEXTO: {context}
-OBJETIVO PRINCIPAL: {user_profile.goal or 'manter a forma'}
-NÍVEL ATUAL: {user_profile.activity_level or 'iniciante'}
-PROGRESSO RECENTE: {user_context.get('recent_activity', 'começando a jornada')}
-IDADE: {user_profile.age or 'não informada'}
+OBJETIVO: {user_profile.goal or 'manter a forma'}
+NÍVEL: {user_profile.activity_level or 'iniciante'}
+PROGRESSO: {user_context.get('recent_activity', 'começando')}
+NOME: {user_profile.user.first_name or 'Atleta'}
 
 REQUISITOS:
 - Máximo 80 palavras
 - Tom encorajador mas não excessivo
 - Mencione o objetivo específico
 - Seja inspirador e realista
-- Use o nome da pessoa se disponível
-- Evite frases clichês como "você consegue!"
+- Use o nome da pessoa
+- Evite frases clichês
 
-CONTEXTOS ESPECÍFICOS:
-- workout_start: Motivação para começar o treino
-- workout_complete: Parabenizar conclusão
-- weekly_review: Reflexão semanal
-- goal_reminder: Lembrar do objetivo
-- comeback: Retorno após pausa
-"""
+Responda APENAS com a mensagem motivacional, sem aspas ou formatação adicional."""
         
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ]
-        
-        response = self._make_openai_request(messages, max_tokens=120, temperature=0.8)
+        response = self._make_gemini_request(prompt)
         
         if response:
-            # Limpar e validar resposta
             cleaned_message = response.strip().replace('"', '').replace('\n', ' ')
             if len(cleaned_message) > 200:
                 cleaned_message = cleaned_message[:200] + "..."
@@ -693,26 +602,23 @@ CONTEXTOS ESPECÍFICOS:
         return None
     
     def get_api_usage_stats(self) -> Dict:
-        """Retorna estatísticas de uso da API para monitoramento"""
+        """Retorna estatísticas de uso da API"""
         try:
-            today_key = f"openai_metrics_{datetime.now().strftime('%Y-%m-%d')}"
+            today_key = f"gemini_metrics_{datetime.now().strftime('%Y-%m-%d')}"
             today_metrics = cache.get(today_key, [])
             
             if not today_metrics:
-                return {"usage_today": 0, "tokens_used": 0, "requests_made": 0}
+                return {"usage_today": 0, "requests_made": 0}
             
-            total_tokens = sum([m.get('total_tokens', 0) for m in today_metrics])
             total_requests = len(today_metrics)
             
-            # Verificar rate limit
             rate_limit_data = cache.get(self.rate_limit_cache_key, {"count": 0})
             
             return {
                 "api_available": self.is_available,
                 "usage_today": {
                     "requests_made": total_requests,
-                    "tokens_used": total_tokens,
-                    "rate_limit_remaining": max(0, 50 - rate_limit_data.get("count", 0))
+                    "rate_limit_remaining": max(0, settings.GEMINI_RATE_LIMIT_PER_MINUTE - rate_limit_data.get("count", 0))
                 },
                 "last_test": self._test_api_connection()
             }
@@ -722,20 +628,17 @@ CONTEXTOS ESPECÍFICOS:
             return {"error": "Unable to fetch stats"}
     
     def _get_user_context(self, user) -> Dict:
-        """Versão otimizada de coleta de contexto do usuário"""
+        """Coleta contexto do usuário com cache"""
         try:
-            # Cache por 1 hora para evitar queries desnecessárias
             cache_key = f"user_context_{user.id}"
             cached_context = cache.get(cache_key)
             if cached_context:
                 return cached_context
             
-            # Últimas 10 sessões
             recent_sessions = WorkoutSession.objects.filter(
                 user=user, completed=True
             ).order_by('-completed_at')[:10]
             
-            # Exercícios mais realizados
             from django.db.models import Count
             exercise_logs = ExerciseLog.objects.filter(
                 session__user=user,
@@ -754,7 +657,6 @@ CONTEXTOS ESPECÍFICOS:
                 'activity_level': 'ativo' if recent_sessions.count() >= 5 else 'moderado' if recent_sessions.count() >= 2 else 'iniciante'
             }
             
-            # Cache por 1 hora
             cache.set(cache_key, context, 3600)
             
             return context
@@ -769,8 +671,7 @@ CONTEXTOS ESPECÍFICOS:
         week_stats = data.get('week_stats', {})
         trends = data.get('trends', {})
         
-        return f"""
-ANALISAR PROGRESSO FITNESS DO USUÁRIO
+        return f"""Você é um especialista em análise de performance fitness. Analise os dados e forneça insights precisos.
 
 PERFIL:
 - Objetivo: {profile.goal or 'fitness geral'}
@@ -783,18 +684,15 @@ DADOS ÚLTIMO MÊS:
 - Duração média: {month_stats.get('avg_duration', 0):.1f} min
 - Avaliação média: {month_stats.get('avg_rating', 0):.1f}/5
 
-DADOS ÚLTIMA SEMANA:
-- Treinos esta semana: {week_stats.get('completed_sessions', 0)}
+ÚLTIMA SEMANA:
+- Treinos: {week_stats.get('completed_sessions', 0)}
 - Taxa de conclusão: {week_stats.get('completion_rate', 0)}%
 
 TENDÊNCIAS:
 - Padrão: {trends.get('trend', 'estável')}
 - Consistência: {trends.get('consistency_score', 0):.1f}
 
-GRUPOS MUSCULARES TRABALHADOS:
-{', '.join(data.get('month_muscle_groups', {}).keys()) or 'dados insuficientes'}
-
-FORMATO DE RESPOSTA (JSON):
+RESPONDA APENAS COM JSON VÁLIDO (sem markdown):
 {{
     "overall_progress": "excelente|muito_bom|bom|médio|precisa_melhorar",
     "progress_summary": "análise objetiva em 1-2 frases",
@@ -816,5 +714,4 @@ FORMATO DE RESPOSTA (JSON):
     "goal_alignment": "como está progredindo em relação ao objetivo"
 }}
 
-Seja específico, honesto e construtivo. Baseie-se apenas nos dados fornecidos.
-"""
+Seja específico, honesto e construtivo baseado nos dados fornecidos."""

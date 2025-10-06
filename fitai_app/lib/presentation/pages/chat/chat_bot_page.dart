@@ -16,11 +16,13 @@ class _ChatBotPageState extends State<ChatBotPage> {
   final ScrollController _scrollController = ScrollController();
   bool _isInitialized = false;
 
-  @override
-  void initState() {
-    super.initState();
+@override
+void initState() {
+  super.initState();
+  WidgetsBinding.instance.addPostFrameCallback((_) {
     _initializeChat();
-  }
+  });
+}
 
   @override
   void dispose() {

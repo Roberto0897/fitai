@@ -146,6 +146,7 @@ CORS_ALLOWED_ORIGINS = [
 
 CORS_ALLOW_ALL_ORIGINS = DEBUG  # Só em desenvolvimento
 
+"""""
 # =============================================================================
 # 🤖 CONFIGURAÇÕES DE IA E OPENAI
 # =============================================================================
@@ -178,11 +179,53 @@ OPENAI_RETRY_DELAY = config('OPENAI_RETRY_DELAY', default=1.0, cast=float)
 AI_CONTENT_FILTERING = config('AI_CONTENT_FILTERING', default=True, cast=bool)
 AI_MAX_RESPONSE_LENGTH = config('AI_MAX_RESPONSE_LENGTH', default=2000, cast=int)
 
+"""
+# =============================================================================
+# 🤖 CONFIGURAÇÕES DE IA - GOOGLE GEMINI (substituiu OpenAI)
+# =============================================================================
+
+# Google Gemini API Configuration
+GEMINI_API_KEY = config('GEMINI_API_KEY', default='')
+GEMINI_MODEL = config('GEMINI_MODEL', default='gemini-2.0-flash-exp')  # Modelo mais rápido e gratuito
+GEMINI_MAX_TOKENS = config('GEMINI_MAX_TOKENS', default=1000, cast=int)
+GEMINI_TEMPERATURE = config('GEMINI_TEMPERATURE', default=0.7, cast=float)
+
+# AI Features Control
+AI_FEATURES_ENABLED = bool(GEMINI_API_KEY.strip())  # Só ativa se tiver API key válida
+AI_FALLBACK_TO_RULES = True  # Sempre usar fallbacks quando IA indisponível
+
+# Rate Limiting Configuration (Gemini tem limites mais generosos)
+GEMINI_RATE_LIMIT_PER_MINUTE = config('GEMINI_RATE_LIMIT_PER_MINUTE', default=15, cast=int)
+GEMINI_RATE_LIMIT_PER_DAY = config('GEMINI_RATE_LIMIT_PER_DAY', default=1500, cast=int)
+
+# AI Quality & Monitoring
+AI_QUALITY_THRESHOLD = config('AI_QUALITY_THRESHOLD', default=70.0, cast=float)
+AI_ENABLE_METRICS = config('AI_ENABLE_METRICS', default=True, cast=bool)
+AI_CACHE_TIMEOUT = config('AI_CACHE_TIMEOUT', default=3600, cast=int)
+
+# Gemini Timeout & Retry Configuration
+GEMINI_TIMEOUT_SECONDS = config('GEMINI_TIMEOUT_SECONDS', default=30, cast=int)
+GEMINI_MAX_RETRIES = config('GEMINI_MAX_RETRIES', default=3, cast=int)
+GEMINI_RETRY_DELAY = config('GEMINI_RETRY_DELAY', default=1.0, cast=float)
+
+# AI Content Safety (Gemini tem filtros nativos)
+AI_CONTENT_FILTERING = config('AI_CONTENT_FILTERING', default=True, cast=bool)
+AI_MAX_RESPONSE_LENGTH = config('AI_MAX_RESPONSE_LENGTH', default=2000, cast=int)
+
+# Safety Settings para Gemini
+GEMINI_SAFETY_SETTINGS = {
+    'HARM_CATEGORY_HARASSMENT': 'BLOCK_MEDIUM_AND_ABOVE',
+    'HARM_CATEGORY_HATE_SPEECH': 'BLOCK_MEDIUM_AND_ABOVE',
+    'HARM_CATEGORY_SEXUALLY_EXPLICIT': 'BLOCK_MEDIUM_AND_ABOVE',
+    'HARM_CATEGORY_DANGEROUS_CONTENT': 'BLOCK_MEDIUM_AND_ABOVE',
+}
+
+
 # =============================================================================
 # 📊 CACHE CONFIGURATION (MELHORADA PARA IA)
 # =============================================================================
-
-# Cache para desenvolvimento com Redis se disponível
+"""
+# Cache para desenvolvimento com Redis se disponível / implementar posteriomente caso necessario
 CACHES = {
     'default': {
         'BACKEND': 'django.core.cache.backends.redis.RedisCache',
@@ -204,6 +247,17 @@ CACHES = {
         }
     }
 }
+"""
+
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'fitai_dev_cache',
+    }
+}
+
+DEBUG = True
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', '0.0.0.0']
 
 # Cache específico para IA com timeout maior
 CACHE_TIMEOUTS = {
@@ -392,8 +446,8 @@ REST_FRAMEWORK_THROTTLE_RATES = {
     'anon': '100/hour',                  # Usuários anônimos
     
     # Rate limits específicos do chatbot
-    'chatbot_start': '10/hour',          # Iniciar conversas
-    'chatbot_message': '30/hour',        # Enviar mensagens
+    'chatbot_start': '50/hour',          # Iniciar conversas
+    'chatbot_message': '150/hour',        # Enviar mensagens
     'chatbot_history': '50/hour',        # Ver histórico
     'chatbot_analytics': '10/hour',      # Analytics do chat
 }
@@ -421,8 +475,8 @@ CHATBOT_SETTINGS = {
 
 # Rate limiting específico para chatbot (mais detalhado)
 CHATBOT_RATE_LIMITS = {
-    'start_conversation': '10/hour',       # Criar conversas
-    'send_message': '30/hour',             # Enviar mensagens
+    'start_conversation': '50/hour',       # Criar conversas
+    'send_message': '150/hour',             # Enviar mensagens
     'conversation_history': '50/hour',     # Ver histórico
     'user_conversations': '20/hour',       # Listar conversas
     'end_conversation': '20/hour',         # Finalizar conversas
@@ -682,29 +736,24 @@ else:
     CHATBOT_SETTINGS['MAX_CONVERSATIONS_PER_USER'] = 15
 
 # =============================================================================
-# ✅ VALIDAÇÕES DE CONFIGURAÇÃO
+# ✅ VALIDAÇÕES DE CONFIGURAÇÃO (atualizado para Gemini)
 # =============================================================================
 
-# Validar configurações críticas
 def validate_ai_configuration():
     """Valida configurações de IA no startup"""
     errors = []
     
-    if AI_FEATURES_ENABLED and not OPENAI_API_KEY:
-        errors.append("OPENAI_API_KEY é obrigatória quando AI_FEATURES_ENABLED=True")
+    if AI_FEATURES_ENABLED and not GEMINI_API_KEY:
+        errors.append("GEMINI_API_KEY é obrigatória quando AI_FEATURES_ENABLED=True")
     
-    if OPENAI_MAX_TOKENS > 4000:
-        errors.append("OPENAI_MAX_TOKENS não pode exceder 4000")
+    if GEMINI_MAX_TOKENS > 8000:
+        errors.append("GEMINI_MAX_TOKENS não pode exceder 8000")
     
-    if not (0.0 <= OPENAI_TEMPERATURE <= 2.0):
-        errors.append("OPENAI_TEMPERATURE deve estar entre 0.0 e 2.0")
+    if not (0.0 <= GEMINI_TEMPERATURE <= 2.0):
+        errors.append("GEMINI_TEMPERATURE deve estar entre 0.0 e 2.0")
     
-    # Validações específicas do chatbot
     if CHATBOT_SETTINGS['MESSAGE_MAX_LENGTH'] > 1000:
         errors.append("CHATBOT_MESSAGE_MAX_LENGTH não pode exceder 1000 caracteres")
-    
-    if CHATBOT_SETTINGS['MAX_CONVERSATIONS_PER_USER'] > 50:
-        errors.append("MAX_CONVERSATIONS_PER_USER não pode exceder 50")
     
     if errors:
         import sys
@@ -714,9 +763,9 @@ def validate_ai_configuration():
         if config('STRICT_VALIDATION', default=False, cast=bool):
             sys.exit(1)
     else:
-        print("✅ Configurações validadas com sucesso (IA + Chatbot)")
+        print("✅ Configurações validadas com sucesso (Gemini + Chatbot)")
 
-# Executar validação se não estiver em testes
+# Executar validação
 import sys
 if 'test' not in sys.argv and 'migrate' not in sys.argv:
     validate_ai_configuration()
