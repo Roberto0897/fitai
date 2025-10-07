@@ -1,9 +1,10 @@
-// ====== REGISTER PAGE OTIMIZADO ======
+// ====== REGISTER PAGE OTIMIZADO - SEM ERROS ======
 import 'package:flutter/material.dart';
 import '../../../core/router/app_router.dart';
 import '../../service/user_service.dart';
 import '../../models/user_model.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../../service/ai_workout_generator_service.dart';
 
 
 class RegisterPageOptimized extends StatefulWidget {
@@ -19,7 +20,7 @@ class _RegisterPageOptimizedState extends State<RegisterPageOptimized> {
   int _currentPage = 0;
   bool _isLoading = false;
 
-  // 🔥 OTIMIZAÇÃO: Controllers lazy initialization
+  // Controllers lazy initialization
   late final TextEditingController _nomeController;
   late final TextEditingController _emailController;
   late final TextEditingController _senhaController;
@@ -33,7 +34,6 @@ class _RegisterPageOptimizedState extends State<RegisterPageOptimized> {
   @override
   void initState() {
     super.initState();
-    // 🔥 OTIMIZAÇÃO: Inicializar controllers apenas quando necessário
     _initControllers();
   }
 
@@ -47,42 +47,89 @@ class _RegisterPageOptimizedState extends State<RegisterPageOptimized> {
     _alturaController = TextEditingController();
   }
 
-  // 🔥 SOLUÇÃO PRINCIPAL: Registro com Firebase integrado
+  // ✅ CORRIGIDO: Conversão para Map
   void _finishRegistration() async {
     setState(() => _isLoading = true);
-
+    
     _updateUserDataFromControllers();
-
+    
     try {
-      // Verificar se email já existe
+      // 1️⃣ Verificar se email já existe
       if (await UserService.emailExists(_userData.email)) {
         _showErrorMessage('Este email já está cadastrado. Tente fazer login.');
+        setState(() => _isLoading = false);
         return;
       }
-
-      // 🔥 REMOVIDO: Future.delayed desnecessário que causava lentidão
       
-      // 🔥 SOLUÇÃO: Registrar no Firebase primeiro
+      // 2️⃣ Criar usuário no Firebase Auth
       final userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
         email: _userData.email,
         password: _userData.senha,
       );
-
+      
       debugPrint('✅ Firebase Auth: Usuário criado ${userCredential.user?.uid}');
-
-      // Registrar dados adicionais no UserService
-      bool success = await UserService.registerUser(_userData);
-
-      if (success && mounted) {
-        _showSuccessMessage('Cadastro realizado com sucesso!');
-        
-        // 🔥 SOLUÇÃO: NÃO navegar manualmente - deixar o AuthRouter fazer isso
-        // O AuthNotifier vai detectar o usuário logado e redirecionar automaticamente
-        debugPrint('🚀 Usuário registrado, aguardando redirect automático...');
+      
+      // 3️⃣ Atualizar display name
+      await userCredential.user?.updateDisplayName(_userData.nome);
+      
+      // 4️⃣ Salvar dados do usuário no Firestore/Firebase
+      debugPrint('📤 Salvando dados no Firebase...');
+      bool firebaseSuccess = await UserService.registerUser(_userData);
+      
+      if (!firebaseSuccess) {
+        throw Exception('Falha ao salvar dados no Firebase');
       }
+      
+      // 5️⃣ Sincronizar com Django
+      debugPrint('📤 Sincronizando com backend Django...');
+      bool djangoSuccess = await UserService.syncProfileWithDjango(_userData);
+      
+      if (!djangoSuccess) {
+        debugPrint('⚠️ Aviso: Falha ao sincronizar com Django (continuando)');
+      }
+      
+      // 6️⃣ 🤖 GERAR TREINO PERSONALIZADO COM IA
+      debugPrint('🤖 Gerando treino personalizado com IA...');
+      
+      if (mounted) {
+        setState(() {
+          // Atualizar UI para mostrar que está gerando treino
+        });
+      }
+      
+      // ✅ CORRIGIDO: Usar .toMap() para converter objeto em Map
+      final workoutResult = await AIWorkoutGeneratorService.generatePersonalizedWorkout(
+        userData: _userData.toMap(),  // ✅ CORRIGIDO
+      );
+      
+      if (workoutResult != null) {
+        debugPrint('✅ Treino personalizado criado! ID: ${workoutResult['workout_id']}');
+        
+        if (mounted) {
+          _showSuccessMessage(
+            'Cadastro realizado! Seu treino personalizado está pronto! 🎉'
+          );
+        }
+      } else {
+        debugPrint('⚠️ Não foi possível gerar treino automaticamente');
+        
+        if (mounted) {
+          _showSuccessMessage(
+            'Cadastro realizado! Você pode gerar seu treino no dashboard.'
+          );
+        }
+      }
+      
+      // 7️⃣ Aguardar redirect automático do AuthNotifier
+      debugPrint('🚀 Cadastro completo, aguardando redirect...');
+      
+      // Pequeno delay para garantir que a mensagem de sucesso seja vista
+      await Future.delayed(const Duration(seconds: 2));
+      
     } on FirebaseAuthException catch (e) {
       debugPrint('❌ Erro Firebase: ${e.code}');
       String errorMessage;
+      
       switch (e.code) {
         case 'email-already-in-use':
           errorMessage = 'Este email já está sendo usado.';
@@ -96,39 +143,17 @@ class _RegisterPageOptimizedState extends State<RegisterPageOptimized> {
         default:
           errorMessage = 'Erro no cadastro: ${e.message}';
       }
+      
       if (mounted) _showErrorMessage(errorMessage);
+      
     } catch (e) {
       debugPrint('❌ Erro inesperado: $e');
-      if (mounted) _showErrorMessage('Erro ao realizar cadastro: ${e.toString()}');
+      if (mounted) {
+        _showErrorMessage('Erro ao realizar cadastro: ${e.toString()}');
+      }
+      
     } finally {
       if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  // 🔥 OTIMIZAÇÃO: Validação simplificada
-  bool _validateCurrentStep() {
-    switch (_currentPage) {
-      case 0:
-        if (!_formKey.currentState!.validate()) return false;
-        _updateUserDataFromControllers();
-        return _userData.validarDadosBasicos() && 
-               _userData.validarEmail() && 
-               _userData.senha.length >= 6;
-      case 1:
-        return _userData.validarMetas();
-      case 2:
-        return _userData.nivelAtividade.isNotEmpty;
-      case 3:
-        return _userData.areasDesejadas.isNotEmpty;
-      case 4:
-        _updateUserDataFromControllers();
-        return _userData.validarDadosFisicos();
-      case 5:
-        return _userData.tiposTreino.isNotEmpty &&
-               _userData.equipamentos.isNotEmpty &&
-               _userData.tempoDisponivel.isNotEmpty;
-      default:
-        return true;
     }
   }
 
@@ -140,6 +165,54 @@ class _RegisterPageOptimizedState extends State<RegisterPageOptimized> {
     _userData.pesoAtual = double.tryParse(_pesoAtualController.text) ?? 0.0;
     _userData.pesoDesejado = double.tryParse(_pesoDesejadoController.text) ?? 0.0;
     _userData.altura = double.tryParse(_alturaController.text) ?? 0.0;
+  }
+
+  bool _validateCurrentStep() {
+    switch (_currentPage) {
+      case 0:
+        // Step 1: Dados básicos
+        if (!_formKey.currentState!.validate()) {
+          return false;
+        }
+        _updateUserDataFromControllers();
+        return _userData.nome.isNotEmpty && 
+               _userData.email.isNotEmpty && 
+               _userData.senha.length >= 6 &&
+               _userData.idade >= 13 &&
+               _userData.sexo.isNotEmpty;
+        
+      case 1:
+        // Step 2: Metas
+        return _userData.metas.isNotEmpty;
+        
+      case 2:
+        // Step 3: Nível de atividade
+        return _userData.nivelAtividade.isNotEmpty;
+        
+      case 3:
+        // Step 4: Áreas desejadas
+        return _userData.areasDesejadas.isNotEmpty;
+        
+      case 4:
+        // Step 5: Dados físicos
+        _updateUserDataFromControllers();
+        return _userData.pesoAtual > 0 && 
+               _userData.pesoDesejado > 0 && 
+               _userData.altura > 0;
+        
+      case 5:
+        // Step 6: Preferências de treino
+        return _userData.tiposTreino.isNotEmpty &&
+               _userData.equipamentos.isNotEmpty &&
+               _userData.tempoDisponivel.isNotEmpty;
+        
+      case 6:
+        // Step 7: Finalização (sempre válido)
+        return true;
+        
+      default:
+        return true;
+    }
   }
 
   void _showErrorMessage(String message) {
@@ -335,7 +408,7 @@ class _RegisterPageOptimizedState extends State<RegisterPageOptimized> {
               ),
               const SizedBox(height: 30),
               GestureDetector(
-              onTap: AppRouter.goToLogin,
+                onTap: AppRouter.goToLogin,
                 child: const Text(
                   'Já tenho conta!',
                   style: TextStyle(
@@ -763,6 +836,7 @@ class _RegisterPageOptimizedState extends State<RegisterPageOptimized> {
     );
   }
 
+  // ✅ CORRIGIDO: withValues ao invés de withOpacity
   Widget _buildStep7() {
     return Padding(
       padding: const EdgeInsets.all(20.0),
@@ -770,48 +844,83 @@ class _RegisterPageOptimizedState extends State<RegisterPageOptimized> {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           const Text(
-            'Identificamos todos os dados de treino\nperfeitos para você!',
-            style: TextStyle(color: Colors.grey, fontSize: 14),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 60),
-          
-          const SizedBox(
-            width: 100,
-            height: 100,
-            child: CircularProgressIndicator(
-              strokeWidth: 6,
-              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF00BCD4)),
+            'Analisando seu perfil e criando\no treino perfeito para você!',
+            style: TextStyle(
+              color: Colors.white, 
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
             ),
+            textAlign: TextAlign.center,
           ),
           
           const SizedBox(height: 40),
           
-          const Text(
-            'Carregando informações perfeitas...',
-            style: TextStyle(color: Colors.white, fontSize: 16),
+          // Animação de loading com ícone de IA
+          Stack(
+            alignment: Alignment.center,
+            children: [
+              const SizedBox(
+                width: 120,
+                height: 120,
+                child: CircularProgressIndicator(
+                  strokeWidth: 6,
+                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF00BCD4)),
+                ),
+              ),
+              Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF00BCD4).withValues(alpha: 0.2),  // ✅ CORRIGIDO
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.psychology,
+                  size: 40,
+                  color: Color(0xFF00BCD4),
+                ),
+              ),
+            ],
           ),
           
-          const SizedBox(height: 60),
+          const SizedBox(height: 40),
           
+          // Indicadores de progresso
+          _buildProgressStep('✓ Perfil analisado', true),
+          const SizedBox(height: 12),
+          _buildProgressStep('✓ Metas identificadas', true),
+          const SizedBox(height: 12),
+          _buildProgressStep('⟳ IA gerando treino...', false),
+          
+          const SizedBox(height: 50),
+          
+          // Card com dica - ✅ CORRIGIDO
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: const Color(0xFF00BCD4).withOpacity(0.1),
+              gradient: LinearGradient(
+                colors: [
+                  const Color(0xFF00BCD4).withValues(alpha: 0.2),  // ✅ CORRIGIDO
+                  const Color(0xFF0097A7).withValues(alpha: 0.2),  // ✅ CORRIGIDO
+                ],
+              ),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFF00BCD4), width: 1),
+              border: Border.all(
+                color: const Color(0xFF00BCD4),
+                width: 1,
+              ),
             ),
             child: const Column(
               children: [
                 Icon(
-                  Icons.fitness_center,
+                  Icons.lightbulb_outline,
                   color: Color(0xFF00BCD4),
                   size: 40,
                 ),
-                SizedBox(height: 10),
+                SizedBox(height: 12),
                 Text(
-                  'DICA FITNESS',
+                  'VOCÊ SABIA?',
                   style: TextStyle(
                     color: Color(0xFF00BCD4),
                     fontSize: 16,
@@ -820,8 +929,11 @@ class _RegisterPageOptimizedState extends State<RegisterPageOptimized> {
                 ),
                 SizedBox(height: 8),
                 Text(
-                  'Aguarde alguns instantes! Prepare-se\npara descobrir o treino perfeito!',
-                  style: TextStyle(color: Colors.white, fontSize: 14),
+                  'Nossa IA analisa mais de 15 fatores do seu\nperfil para criar o treino ideal!',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                  ),
                   textAlign: TextAlign.center,
                 ),
               ],
@@ -829,6 +941,28 @@ class _RegisterPageOptimizedState extends State<RegisterPageOptimized> {
           ),
         ],
       ),
+    );
+  }
+
+  // Helper widget para steps de progresso
+  Widget _buildProgressStep(String text, bool completed) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(
+          completed ? Icons.check_circle : Icons.hourglass_empty,
+          color: completed ? Colors.green : const Color(0xFF00BCD4),
+          size: 20,
+        ),
+        const SizedBox(width: 10),
+        Text(
+          text,
+          style: TextStyle(
+            color: completed ? Colors.green : Colors.white,
+            fontSize: 14,
+          ),
+        ),
+      ],
     );
   }
 
@@ -1097,25 +1231,29 @@ class _RegisterPageOptimizedState extends State<RegisterPageOptimized> {
       ),
     );
   }
+
   void _nextPage() {
-  if (_validateCurrentStep()) {
-    if (_currentPage < 6) {
-      _pageController.nextPage(
+    if (_validateCurrentStep()) {
+      if (_currentPage < 6) {
+        _pageController.nextPage(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+        );
+      }
+    } else {
+      _showErrorMessage('Por favor, preencha todos os campos obrigatórios');
+    }
+  }
+
+  void _previousPage() {
+    if (_currentPage > 0) {
+      _pageController.previousPage(
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeInOut,
       );
     }
   }
-}
 
-void _previousPage() {
-  if (_currentPage > 0) {
-    _pageController.previousPage(
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-    );
-  }
-}
   Widget _buildNavigationButtons() {
     return Padding(
       padding: const EdgeInsets.all(20.0),
@@ -1168,11 +1306,8 @@ void _previousPage() {
       ),
     );
   }
-  
-  
 
-  
- @override
+  @override
   void dispose() {
     _pageController.dispose();
     _nomeController.dispose();

@@ -6,6 +6,8 @@ import 'package:crypto/crypto.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter/foundation.dart';
 import '../models/user_model.dart';
+import 'package:http/http.dart' as http;
+
 
 class UserService {
   // Instâncias do Firebase
@@ -18,6 +20,9 @@ class UserService {
   // Keys para armazenamento local
   static const String _usersKey = 'registered_users';
   static const String _currentUserKey = 'current_user';
+
+   // 🔥 CONFIGURAÇÃO DA API DJANGO
+  static const String _djangoBaseUrl = 'http://localhost:8000/api/v1';
 
   // ==================== GOOGLE SIGN-IN CONFIGURATION ====================
   
@@ -816,6 +821,326 @@ class UserService {
       print('❌ Erro na limpeza completa: $e');
     }
   }
+
+  // ==================== SINCRONIZAÇÃO COM DJANGO ====================
+
+/// Enviar dados do perfil para o Django após registro
+static Future<bool> syncProfileWithDjango(UserRegistrationData userData) async {
+  try {
+    // Obter token do Firebase
+    final token = await _auth.currentUser?.getIdToken();
+    if (token == null) {
+      print('❌ Não foi possível obter token do Firebase');
+      return false;
+    }
+
+    // Mapear dados para formato esperado pelo Django
+    final requestData = {
+      'nome': userData.nome,
+      'email': userData.email,
+      'idade': userData.idade,
+      'sexo': userData.sexo,
+      
+      // Mapear objetivo (metas -> objetivo)
+      'objetivo': _mapMetaToObjetivo(userData.metas),
+      
+      // Mapear nível de atividade
+      'nivel_atividade': _mapNivelAtividade(userData.nivelAtividade),
+      
+      // Dados físicos
+      'peso_atual': userData.pesoAtual,
+      'peso_desejado': userData.pesoDesejado,
+      'altura': userData.altura,
+      
+      // Preferências (converter listas em strings)
+      'areas_desejadas': userData.areasDesejadas.join(','),
+      'tipos_treino': userData.tiposTreino.join(','),
+      'equipamentos': userData.equipamentos,
+      'tempo_disponivel': userData.tempoDisponivel,
+    };
+
+    print('📤 Enviando dados para Django: $requestData');
+
+    // Fazer requisição POST para o Django
+    final response = await http.post(
+      Uri.parse('$_djangoBaseUrl/users/register/'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode(requestData),
+    );
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      print('✅ Perfil sincronizado com Django');
+      return true;
+    } else {
+      print('❌ Erro ao sincronizar com Django: ${response.statusCode}');
+      print('Response: ${response.body}');
+      return false;
+    }
+    
+  } catch (e) {
+    print('❌ Erro ao sincronizar com Django: $e');
+    return false;
+  }
+}
+
+/// Mapear metas do Flutter para objetivo do Django
+static String _mapMetaToObjetivo(List<String> metas) {
+  if (metas.isEmpty) return 'Manter Forma';
+  
+  final meta = metas.first;
+  
+  // Mapeamento exato com o que o Django espera
+  final mapeamento = {
+    'Emagrecimento': 'Perder peso',
+    'Perder peso': 'Perder peso',
+    'Ganho Muscular': 'Ganhar massa',
+    'Ganhar massa': 'Ganhar massa',
+    'Manter Forma': 'Manter forma',
+    'Manter forma': 'Manter forma',
+    'Bem Estar': 'Manter forma',
+  };
+  
+  return mapeamento[meta] ?? 'Manter forma';
+}
+
+/// Mapear nível de atividade
+static String _mapNivelAtividade(String nivel) {
+  final mapeamento = {
+    'Sedentário': 'Sedentário',
+    'Moderado': 'Moderado',
+    'Ativo': 'Moderado', // Django não tem "Ativo", usa "Moderado"
+    'Muito Ativo': 'Intenso',
+    'Intenso': 'Intenso',
+  };
+  
+  return mapeamento[nivel] ?? 'Moderado';
+}
+
+/// Atualizar perfil no Django
+static Future<bool> updateProfileInDjango(UserRegistrationData userData) async {
+  try {
+    final token = await _auth.currentUser?.getIdToken();
+    if (token == null) {
+      print('❌ Não foi possível obter token do Firebase');
+      return false;
+    }
+
+    final requestData = {
+      'nome': userData.nome,
+      'idade': userData.idade,
+      'sexo': userData.sexo,
+      'objetivo': _mapMetaToObjetivo(userData.metas),
+      'nivel_atividade': _mapNivelAtividade(userData.nivelAtividade),
+      'peso_atual': userData.pesoAtual,
+      'peso_desejado': userData.pesoDesejado,
+      'altura': userData.altura,
+      'areas_desejadas': userData.areasDesejadas.join(','),
+      'tipos_treino': userData.tiposTreino.join(','),
+      'equipamentos': userData.equipamentos,
+      'tempo_disponivel': userData.tempoDisponivel,
+    };
+
+    print('📤 Atualizando perfil no Django');
+
+    final response = await http.post(
+      Uri.parse('$_djangoBaseUrl/users/register/'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode(requestData),
+    );
+
+    if (response.statusCode == 200) {
+      print('✅ Perfil atualizado no Django');
+      return true;
+    } else {
+      print('❌ Erro ao atualizar Django: ${response.statusCode}');
+      return false;
+    }
+    
+  } catch (e) {
+    print('❌ Erro ao atualizar Django: $e');
+    return false;
+  }
+}
+
+/// Obter perfil do Django (para carregar na ProfilePage)
+static Future<UserRegistrationData?> getProfileFromDjango() async {
+  try {
+    final token = await _auth.currentUser?.getIdToken();
+    if (token == null) {
+      print('❌ Não foi possível obter token do Firebase');
+      return null;
+    }
+
+    final response = await http.get(
+      Uri.parse('$_djangoBaseUrl/users/dashboard/'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    );
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      print('✅ Perfil carregado do Django');
+      
+      // Converter response do Django para UserRegistrationData
+      return _djangoResponseToUserData(data);
+    } else {
+      print('❌ Erro ao carregar perfil do Django: ${response.statusCode}');
+      return null;
+    }
+    
+  } catch (e) {
+    print('❌ Erro ao carregar perfil do Django: $e');
+    return null;
+  }
+}
+
+/// Converter resposta do Django para UserRegistrationData
+static UserRegistrationData _djangoResponseToUserData(Map<String, dynamic> data) {
+  final user = data['user'] ?? {};
+  final profile = user['profile'] ?? user; // ✅ Tenta buscar dentro de 'profile' primeiro
+  
+  // 🔍 DEBUG: Mostrar o que está sendo recebido
+  print('🔍 DEBUG - Dados recebidos do Django:');
+  print('User keys: ${user.keys.toList()}');
+  if (user['profile'] != null) {
+    print('Profile keys: ${(user['profile'] as Map).keys.toList()}');
+  }
+  
+  return UserRegistrationData(
+    nome: user['first_name'] ?? user['username'] ?? '',
+    email: user['email'] ?? '',
+    senha: '', 
+    
+    // ✅ CORRIGIDO: Tenta múltiplas possibilidades de nome de campo
+    idade: _parseIntSafely(
+      profile['idade'] ?? 
+      profile['age'] ?? 
+      user['idade'] ?? 
+      user['age']
+    ),
+    
+    sexo: profile['sexo'] ?? 
+          profile['gender'] ?? 
+          profile['genero'] ??
+          user['sexo'] ?? 
+          user['gender'] ?? 
+          '',
+    
+    metas: _parseGoalToMetas(
+      profile['goal'] ?? 
+      profile['objetivo'] ?? 
+      user['goal']
+    ),
+    
+    nivelAtividade: _parseActivityLevel(
+      profile['activity_level'] ?? 
+      profile['nivel_atividade'] ?? 
+      user['activity_level']
+    ),
+    
+    areasDesejadas: _parseStringToList(
+      profile['focus_areas'] ?? 
+      profile['areas_desejadas'] ?? 
+      user['focus_areas']
+    ),
+    
+    // ✅ CORRIGIDO: Tenta nomes em português e inglês
+    pesoAtual: _parseDoubleSafely(
+      profile['peso_atual'] ?? 
+      profile['current_weight'] ?? 
+      user['peso_atual'] ?? 
+      user['current_weight']
+    ),
+    
+    pesoDesejado: _parseDoubleSafely(
+      profile['peso_desejado'] ?? 
+      profile['target_weight'] ?? 
+      user['peso_desejado'] ?? 
+      user['target_weight']
+    ),
+    
+    altura: _parseDoubleSafely(
+      profile['altura'] ?? 
+      profile['height'] ?? 
+      profile['altura_cm'] ??
+      user['altura'] ?? 
+      user['height']
+    ),
+    
+    tiposTreino: _parseStringToList(
+      profile['tipos_treino'] ?? 
+      user['tipos_treino']
+    ),
+    
+    equipamentos: profile['equipamentos'] ?? 
+                  user['equipamentos'] ?? 
+                  '',
+    
+    tempoDisponivel: profile['tempo_disponivel'] ?? 
+                     user['tempo_disponivel'] ?? 
+                     '',
+    
+    malaFlexibilidade: profile['mala_flexibilidade'] ?? 
+                       user['mala_flexibilidade'] ?? 
+                       false,
+    
+    createdAt: DateTime.now(),
+  );
+}
+
+// Helpers de conversão
+static int _parseIntSafely(dynamic value) {
+  if (value == null) return 0;
+  if (value is int) return value;
+  if (value is String) return int.tryParse(value) ?? 0;
+  return 0;
+}
+
+static double _parseDoubleSafely(dynamic value) {
+  if (value == null) return 0.0;
+  if (value is double) return value;
+  if (value is int) return value.toDouble();
+  if (value is String) return double.tryParse(value) ?? 0.0;
+  return 0.0;
+}
+
+static List<String> _parseGoalToMetas(String? goal) {
+  if (goal == null) return ['Manter Forma'];
+  
+  final mapeamento = {
+    'lose_weight': 'Perder peso',
+    'gain_muscle': 'Ganhar massa',
+    'maintain': 'Manter forma',
+  };
+  
+  return [mapeamento[goal] ?? 'Manter forma'];
+}
+
+static String _parseActivityLevel(String? level) {
+  if (level == null) return 'Moderado';
+  
+  final mapeamento = {
+    'sedentary': 'Sedentário',
+    'light': 'Leve',
+    'moderate': 'Moderado',
+    'very_active': 'Intenso',
+  };
+  
+  return mapeamento[level] ?? 'Moderado';
+}
+
+static List<String> _parseStringToList(String? value) {
+  if (value == null || value.isEmpty) return [];
+  return value.split(',').map((e) => e.trim()).toList();
+}
   // === MÉTODOS AUXILIARES ===
 
   // Converter dados do Firestore para UserRegistrationData

@@ -81,7 +81,47 @@ class UserRegistrationData {
   bool validarDadosFisicos() {
     return pesoAtual > 0 && pesoDesejado > 0 && altura > 0;
   }
+  Map<String, dynamic> toMap() {
+    return {
+      'nome': nome,
+      'email': email,
+      'idade': idade,
+      'sexo': sexo,
+      'peso_atual': pesoAtual,
+      'peso_desejado': pesoDesejado,
+      'altura': altura,
+      'metas': metas,
+      'nivel_atividade': nivelAtividade,
+      'areas_desejadas': areasDesejadas,
+      'tipos_treino': tiposTreino,
+      'equipamentos': equipamentos,
+      'tempo_disponivel': tempoDisponivel,
+      'mala_flexibilidade': malaFlexibilidade,
+    };
+  }
 
+  // ✅ NOVO: Conversão específica para Firebase (sem senha)
+  Map<String, dynamic> toFirebaseMap() {
+    return {
+      'nome': nome,
+      'email': email,
+      'idade': idade,
+      'sexo': sexo,
+      'peso_atual': pesoAtual,
+      'peso_desejado': pesoDesejado,
+      'altura': altura,
+      'imc': calcularIMC(),
+      'imc_status': getIMCStatus(),
+      'metas': metas,
+      'nivel_atividade': nivelAtividade,
+      'areas_desejadas': areasDesejadas,
+      'tipos_treino': tiposTreino,
+      'equipamentos': equipamentos,
+      'tempo_disponivel': tempoDisponivel,
+      'mala_flexibilidade': malaFlexibilidade,
+      'created_at': createdAt.toIso8601String(),
+    };
+  }
   // Conversão para JSON (para salvar dados)
   Map<String, dynamic> toJson() {
     return {
@@ -147,6 +187,8 @@ class UserRegistrationData {
     String? equipamentos,
     String? tempoDisponivel,
     bool? malaFlexibilidade,
+
+    
   }) {
     return UserRegistrationData(
       nome: nome ?? this.nome,
@@ -166,6 +208,7 @@ class UserRegistrationData {
       malaFlexibilidade: malaFlexibilidade ?? this.malaFlexibilidade,
       createdAt: this.createdAt,
     );
+    
   }
 
   @override

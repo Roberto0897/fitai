@@ -1,241 +1,96 @@
-/// Provider completo e corrigido para Django REST Framework
-/// Localização: lib/providers/user_profile_provider.dart
-
-import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import '../service/user_service.dart';
 import '../models/user_model.dart';
-import '../service/api_service.dart';
 
 class UserProfileProvider extends ChangeNotifier {
   UserRegistrationData? _userData;
   bool _isLoading = false;
-  String? _errorMessage;
-  bool _profileExists = false;
-  bool _onboardingCompleted = false;
 
   // Getters
-  UserRegistrationData? get userData => _userData;
   bool get isLoading => _isLoading;
-  String? get errorMessage => _errorMessage;
   bool get hasUserData => _userData != null;
-  bool get profileExists => _profileExists;
-  bool get onboardingCompleted => _onboardingCompleted;
 
-  // Getters de conveniência
-  String get nome => _userData?.nome ?? '';
-  String get email => _userData?.email ?? '';
+  String get nome => _userData?.nome ?? 'Usuário';
+  String get email => _userData?.email ?? 'email@exemplo.com';
   int get idade => _userData?.idade ?? 0;
-  String get genero => _userData?.sexo ?? '';
+  String get genero => _userData?.sexo ?? 'Não informado';
+  
   double get pesoAtual => _userData?.pesoAtual ?? 0.0;
   double get pesoDesejado => _userData?.pesoDesejado ?? 0.0;
   double get altura => _userData?.altura ?? 0.0;
-  String get objetivo => _userData?.metas.isNotEmpty == true ? _userData!.metas.first : '';
-  String get nivelAtividade => _userData?.nivelAtividade ?? '';
-  String get preferenciaTreino => _userData?.tiposTreino.join(', ') ?? '';
+  
   double get imc => _userData?.calcularIMC() ?? 0.0;
-  String get imcCategoria => _userData?.getIMCStatus() ?? '';
+  String get imcCategoria => _userData?.getIMCStatus() ?? 'Não calculado';
+  
+  String get objetivo => _userData?.metas.isNotEmpty == true 
+      ? _userData!.metas.first 
+      : 'Não definido';
+  
+  String get nivelAtividade => _userData?.nivelAtividade ?? 'Não informado';
+  
+  String get preferenciaTreino => _userData?.tiposTreino.isNotEmpty == true
+      ? _userData!.tiposTreino.join(', ')
+      : 'Não definido';
 
-  /// Carregar perfil do backend
-  Future<bool> loadProfile() async {
+  /// Carregar perfil do usuário (PRIORIZA DJANGO)
+  Future<void> loadProfile() async {
     _isLoading = true;
-    _errorMessage = null;
     notifyListeners();
 
     try {
-      print('🔍 Carregando perfil do backend...');
+      debugPrint('📥 Carregando perfil do usuário...');
       
-      final response = await ApiService.getDashboard();
+      // PASSO 1: Tentar carregar do Django primeiro
+      UserRegistrationData? djangoProfile = await UserService.getProfileFromDjango();
       
-      print('✅ Dashboard recebido: ${response.keys}');
-      
-      // Verificar se tem campos críticos null
-      final user = response['user'] ?? {};
-      final hasNullFields = user['goal'] == null || 
-                           user['activity_level'] == null ||
-                           user['current_weight'] == null;
-      
-      // Converter resposta do DRF
-      _userData = _convertDRFToUserData(response);
-      _profileExists = true;
-      _onboardingCompleted = !hasNullFields; // Completo se não tem campos null
-      
-      _isLoading = false;
-      notifyListeners();
-      
-      print('📊 Onboarding completo: $_onboardingCompleted');
-      return true;
-      
-    } catch (e) {
-      print('⚠️ Erro ao carregar perfil: $e');
-      
-      if (e.toString().contains('404')) {
-        print('📝 Criando perfil local temporário');
-        await _createDefaultProfile();
-        _profileExists = false;
-        _onboardingCompleted = false;
-        _errorMessage = 'Complete seu perfil para começar';
+      if (djangoProfile != null) {
+        _userData = djangoProfile;
+        debugPrint('✅ Perfil carregado do Django');
       } else {
-        _errorMessage = 'Erro ao carregar: $e';
-      }
-      
-      _isLoading = false;
-      notifyListeners();
-      
-      return _userData != null;
-    }
-  }
-
-  /// Criar perfil local padrão
-  Future<void> _createDefaultProfile() async {
-    _userData = UserRegistrationData(
-      nome: 'Usuário',
-      email: 'usuario@email.com',
-      idade: 25,
-      sexo: 'Não informado',
-      pesoAtual: 70.0,
-      pesoDesejado: 65.0,
-      altura: 170.0,
-      metas: ['Manter forma'],
-      nivelAtividade: 'Moderado',
-      tiposTreino: ['Geral'],
-      areasDesejadas: [],
-      equipamentos: 'Não especificado',
-      tempoDisponivel: '30-45 min',
-      malaFlexibilidade: false,
-    );
-  }
-
-  /// Converter resposta do DRF para UserRegistrationData
-  UserRegistrationData _convertDRFToUserData(Map<String, dynamic> json) {
-    final user = json['user'] ?? {};
-    
-    // Mapear goal
-    String mapGoal(String? goal) {
-      if (goal == null || goal.isEmpty) return 'Manter forma';
-      switch (goal) {
-        case 'lose_weight': return 'Perder peso';
-        case 'gain_muscle': return 'Ganhar massa';
-        case 'maintain': return 'Manter forma';
-        case 'endurance': return 'Melhorar Resistência';
-        default: return 'Manter forma';
-      }
-    }
-    
-    // Mapear activity_level
-    String mapActivityLevel(String? level) {
-      if (level == null || level.isEmpty) return 'Moderado';
-      switch (level) {
-        case 'sedentary': return 'Sedentário';
-        case 'light': return 'Leve';
-        case 'moderate': return 'Moderado';
-        case 'active': return 'Ativo';
-        case 'very_active': return 'Muito Ativo';
-        default: return 'Moderado';
-      }
-    }
-    
-    // Extrair nome: primeiro tenta first_name, depois username
-    String getNome() {
-      final firstName = user['first_name'];
-      final username = user['username'];
-      
-      // Se first_name existe e não é vazio
-      if (firstName != null && firstName.toString().isNotEmpty) {
-        return firstName.toString();
-      }
-      
-      // Se username parece ser UID (muito longo), usar "Usuário"
-      if (username != null && username.toString().length > 25) {
-        return 'Usuário';
-      }
-      
-      return username?.toString() ?? 'Usuário';
-    }
-    
-    // Parse números com segurança
-    double parseDouble(dynamic value, double defaultValue) {
-      if (value == null) return defaultValue;
-      if (value is num) return value.toDouble();
-      if (value is String) {
-        final parsed = double.tryParse(value);
-        return parsed ?? defaultValue;
-      }
-      return defaultValue;
-    }
-    
-    return UserRegistrationData(
-      nome: getNome(),
-      email: user['email']?.toString() ?? '',
-      idade: 25, // Modelo não tem date_of_birth
-      sexo: 'Não informado', // Modelo não tem gender
-      pesoAtual: parseDouble(user['current_weight'], 70.0),
-      pesoDesejado: parseDouble(user['target_weight'], 65.0),
-      altura: 170.0, // Modelo não tem height
-      metas: [mapGoal(user['goal'])],
-      nivelAtividade: mapActivityLevel(user['activity_level']),
-      tiposTreino: ['Geral'],
-      areasDesejadas: _parseAreas(user['focus_areas']),
-      equipamentos: 'Não especificado',
-      tempoDisponivel: '30-45 min',
-      malaFlexibilidade: false,
-    );
-  }
-
-  /// Parse áreas de foco
-  List<String> _parseAreas(dynamic value) {
-    if (value == null || value == '') return [];
-    if (value is String) {
-      return value.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
-    }
-    return [];
-  }
-
-  /// Criar perfil completo no backend
-  Future<bool> createProfileInBackend(UserRegistrationData data) async {
-    _isLoading = true;
-    notifyListeners();
-
-    try {
-      print('📤 Criando perfil no backend...');
-      
-      final profileData = {
-        'nome': data.nome,
-        'email': data.email,
-        'peso_atual': data.pesoAtual,
-        'peso_desejado': data.pesoDesejado,
-        'objetivo': data.metas.isNotEmpty ? data.metas.first : 'Manter forma',
-        'nivel_atividade': data.nivelAtividade,
-        'from_onboarding': true,
-      };
-
-      final response = await ApiService.post('/users/register/', profileData);
-      
-      if (response['success'] == true) {
-        _userData = data;
-        _profileExists = true;
-        _onboardingCompleted = true;
-        _errorMessage = null;
+        // PASSO 2: Fallback para Firebase/Local
+        debugPrint('⚠️ Django falhou, carregando do Firebase...');
+        _userData = await UserService.getCurrentUser();
         
-        print('✅ Perfil criado com sucesso');
-        
-        _isLoading = false;
-        notifyListeners();
-        
-        return true;
+        if (_userData != null) {
+          debugPrint('✅ Perfil carregado do Firebase');
+          
+          // Tentar sincronizar com Django em background
+          _syncWithDjangoInBackground();
+        } else {
+          debugPrint('❌ Nenhum perfil encontrado');
+        }
       }
-      
-      throw Exception('Resposta inválida do servidor');
-      
+
     } catch (e) {
-      print('❌ Erro ao criar perfil: $e');
-      _errorMessage = 'Erro ao criar perfil: $e';
+      debugPrint('❌ Erro ao carregar perfil: $e');
+      
+      // Último recurso: tentar Firebase
+      try {
+        _userData = await UserService.getCurrentUser();
+      } catch (e2) {
+        debugPrint('❌ Erro ao carregar do Firebase também: $e2');
+      }
+    } finally {
       _isLoading = false;
       notifyListeners();
-      
-      return false;
     }
   }
 
-  /// Atualizar métricas
+  /// Sincronizar com Django em background (não bloqueia UI)
+  Future<void> _syncWithDjangoInBackground() async {
+    if (_userData == null) return;
+    
+    try {
+      debugPrint('🔄 Sincronizando perfil com Django em background...');
+      await UserService.syncProfileWithDjango(_userData!);
+      debugPrint('✅ Sincronização em background concluída');
+    } catch (e) {
+      debugPrint('⚠️ Erro na sincronização em background: $e');
+      // Não falhar - é apenas sincronização
+    }
+  }
+
+  /// Atualizar métricas corporais
   Future<bool> updateMetrics({
     double? pesoAtual,
     double? pesoDesejado,
@@ -243,43 +98,34 @@ class UserProfileProvider extends ChangeNotifier {
   }) async {
     if (_userData == null) return false;
 
-    _isLoading = true;
-    notifyListeners();
-
     try {
-      print('📊 Atualizando métricas...');
-      
-      if (pesoAtual != null || pesoDesejado != null) {
-        final weightData = <String, dynamic>{};
-        if (pesoAtual != null) weightData['peso_atual'] = pesoAtual;
-        if (pesoDesejado != null) weightData['peso_desejado'] = pesoDesejado;
-        
-        await ApiService.post('/users/set_weight_info/', weightData);
-      }
-      
-      _userData = _userData!.copyWith(
-        pesoAtual: pesoAtual ?? _userData!.pesoAtual,
-        pesoDesejado: pesoDesejado ?? _userData!.pesoDesejado,
-        altura: altura ?? _userData!.altura,
-      );
-      
-      _isLoading = false;
+      _isLoading = true;
       notifyListeners();
+
+      // Atualizar dados locais
+      if (pesoAtual != null) _userData!.pesoAtual = pesoAtual;
+      if (pesoDesejado != null) _userData!.pesoDesejado = pesoDesejado;
+      if (altura != null) _userData!.altura = altura;
+
+      // Salvar no Firebase
+      await UserService.updateUser(_userData!);
       
-      print('✅ Métricas atualizadas');
+      // Sincronizar com Django
+      await UserService.updateProfileInDjango(_userData!);
+
+      debugPrint('✅ Métricas atualizadas');
       return true;
-      
+
     } catch (e) {
-      print('❌ Erro: $e');
-      _errorMessage = 'Erro ao atualizar: $e';
+      debugPrint('❌ Erro ao atualizar métricas: $e');
+      return false;
+    } finally {
       _isLoading = false;
       notifyListeners();
-      
-      return false;
     }
   }
 
-  /// Atualizar informações pessoais (CORRIGIDO - agora salva no backend)
+  /// Atualizar informações pessoais
   Future<bool> updatePersonalInfo({
     String? nome,
     String? email,
@@ -288,42 +134,27 @@ class UserProfileProvider extends ChangeNotifier {
   }) async {
     if (_userData == null) return false;
 
-    _isLoading = true;
-    notifyListeners();
-
     try {
-      print('📝 Atualizando informações pessoais...');
-      
-      // Enviar para o backend
-      final updateData = <String, dynamic>{};
-      if (nome != null) updateData['nome'] = nome;
-      if (email != null) updateData['email'] = email;
-      if (idade != null) updateData['idade'] = idade;
-      if (sexo != null) updateData['genero'] = sexo;
-      
-      await ApiService.post('/users/register/', updateData);
-      
-      // Atualizar localmente após sucesso
-      _userData = _userData!.copyWith(
-        nome: nome ?? _userData!.nome,
-        email: email ?? _userData!.email,
-        idade: idade ?? _userData!.idade,
-        sexo: sexo ?? _userData!.sexo,
-      );
-      
-      _isLoading = false;
+      _isLoading = true;
       notifyListeners();
-      
-      print('✅ Informações atualizadas no backend');
+
+      if (nome != null) _userData!.nome = nome;
+      if (email != null) _userData!.email = email;
+      if (idade != null) _userData!.idade = idade;
+      if (sexo != null) _userData!.sexo = sexo;
+
+      await UserService.updateUser(_userData!);
+      await UserService.updateProfileInDjango(_userData!);
+
+      debugPrint('✅ Informações pessoais atualizadas');
       return true;
-      
+
     } catch (e) {
-      print('❌ Erro ao atualizar: $e');
-      _errorMessage = 'Erro ao atualizar: $e';
+      debugPrint('❌ Erro ao atualizar informações: $e');
+      return false;
+    } finally {
       _isLoading = false;
       notifyListeners();
-      
-      return false;
     }
   }
 
@@ -335,54 +166,45 @@ class UserProfileProvider extends ChangeNotifier {
   }) async {
     if (_userData == null) return false;
 
-    _isLoading = true;
-    notifyListeners();
-
     try {
-      print('🎯 Atualizando objetivos...');
-      
+      _isLoading = true;
+      notifyListeners();
+
       if (objetivo != null) {
-        await ApiService.post('/users/set_goal/', {'objetivo': objetivo});
+        _userData!.metas = [objetivo];
       }
       
       if (nivelAtividade != null) {
-        await ApiService.post('/users/set_activity_level/', {'nivel_atividade': nivelAtividade});
+        _userData!.nivelAtividade = nivelAtividade;
       }
       
-      _userData = _userData!.copyWith(
-        metas: objetivo != null ? [objetivo] : _userData!.metas,
-        nivelAtividade: nivelAtividade ?? _userData!.nivelAtividade,
-        tiposTreino: preferenciaTreino != null ? [preferenciaTreino] : _userData!.tiposTreino,
-      );
-      
-      _isLoading = false;
-      notifyListeners();
-      
-      print('✅ Objetivos atualizados');
+      if (preferenciaTreino != null) {
+        _userData!.tiposTreino = preferenciaTreino.split(',').map((e) => e.trim()).toList();
+      }
+
+      await UserService.updateUser(_userData!);
+      await UserService.updateProfileInDjango(_userData!);
+
+      debugPrint('✅ Objetivos atualizados');
       return true;
-      
+
     } catch (e) {
-      print('❌ Erro: $e');
-      _errorMessage = 'Erro ao atualizar: $e';
+      debugPrint('❌ Erro ao atualizar objetivos: $e');
+      return false;
+    } finally {
       _isLoading = false;
       notifyListeners();
-      
-      return false;
     }
   }
 
-  /// Limpar dados
-  void clearProfile() {
-    _userData = null;
-    _errorMessage = null;
-    _isLoading = false;
-    _profileExists = false;
-    _onboardingCompleted = false;
-    notifyListeners();
-  }
-
-  /// Refresh
+  /// Atualizar perfil (refresh)
   Future<void> refreshProfile() async {
     await loadProfile();
+  }
+
+  /// Limpar dados (logout)
+  void clearProfile() {
+    _userData = null;
+    notifyListeners();
   }
 }

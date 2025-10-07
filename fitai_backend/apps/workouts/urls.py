@@ -44,5 +44,9 @@ urlpatterns = [
 
     path('workouts/sessions/active/', views.get_active_session, name='get_active_session'),
     path('workouts/sessions/<int:session_id>/cancel/', views.cancel_active_session, name='cancel_active_session'),
+
+   # path('ai/generate-onboarding/', views.generate_onboarding_workout, name='ai-onboarding'),
+
+    path('workouts/onboarding/generate/', views.generate_onboarding_workout, name='generate_onboarding_workout'),
     
 ]

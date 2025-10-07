@@ -7,6 +7,10 @@ from django.utils import timezone
 from .models import Workout, WorkoutExercise, WorkoutSession, ExerciseLog
 from apps.users.models import UserProfile
 from apps.exercises.models import Exercise
+import google.generativeai as genai
+from apps.recommendations.services.recommendation_engine import RecommendationEngine
+from apps.recommendations.services.ai_service import AIService
+import logging
 
 @api_view(['GET'])
 def test_workouts_api(request):
@@ -1322,3 +1326,300 @@ def cancel_active_session(request, session_id):
             status=status.HTTP_404_NOT_FOUND
         )
     
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def generate_onboarding_workout(request):
+    """
+    🤖 Gera treino personalizado com IA durante o cadastro/onboarding
+    
+    Body esperado:
+    {
+        "user_data": {
+            "nome": "João", "idade": 25, "sexo": "Masculino",
+            "peso_atual": 70, "peso_desejado": 65, "altura": 170,
+            "metas": ["Emagrecimento"], "nivel_atividade": "Moderado",
+            "areas_desejadas": ["Abdômen", "Pernas"],
+            "tipos_treino": ["Cardio"], "equipamentos": "Academia completa",
+            "tempo_disponivel": "30-45 minutos"
+        },
+        "ai_prompt": "prompt opcional",
+        "create_workout": true
+    }
+    """
+    try:
+        user = request.user
+        user_data = request.data.get('user_data', {})
+        ai_prompt = request.data.get('ai_prompt')
+        create_workout = request.data.get('create_workout', True)
+        
+        print(f"🤖 Gerando treino IA para: {user.email}")
+        print(f"📊 Dados: {user_data}")
+        
+        # Construir prompt se não foi fornecido
+        if not ai_prompt:
+            ai_prompt = _build_onboarding_prompt(user_data)
+        
+        print(f"📝 Prompt: {len(ai_prompt)} chars")
+        
+        # Gerar com Gemini
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        print("📡 Chamando Gemini...")
+        response = model.generate_content(ai_prompt)
+        
+        ai_text = response.text
+        print(f"📨 Resposta: {len(ai_text)} chars")
+        
+        # Parsear JSON
+        workout_data = _extract_json_from_ai_response(ai_text)
+        
+        if not workout_data:
+            raise ValueError("Não foi possível extrair JSON válido da IA")
+        
+        print(f"✅ JSON parseado: {workout_data.get('workout_name', 'Sem nome')}")
+        
+        # Criar no banco
+        if create_workout:
+            workout = _create_ai_workout(user, workout_data, user_data)
+            
+            return Response({
+                'success': True,
+                'message': 'Treino personalizado criado com sucesso!',
+                'workout_id': workout.id,
+                'workout_name': workout.name,
+                'exercises_count': workout.workout_exercises.count(),
+                'estimated_duration': workout.estimated_duration,
+                'difficulty_level': workout.difficulty_level,
+                'is_ai_generated': True,  # Frontend sabe que veio da IA
+            }, status=status.HTTP_201_CREATED)
+        else:
+            return Response({
+                'success': True,
+                'workout_data': workout_data,
+            }, status=status.HTTP_200_OK)
+            
+    except Exception as e:
+        print(f"❌ Erro: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        
+        return Response({
+            'error': 'Erro ao gerar treino',
+            'details': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ====== gerar treinos final do cadrasto======
+
+def _build_onboarding_prompt(user_data):
+    """Constrói prompt detalhado"""
+    
+    # Calcular IMC
+    peso = user_data.get('peso_atual', 0)
+    altura = user_data.get('altura', 0)
+    imc = 0
+    imc_cat = 'N/A'
+    
+    if peso > 0 and altura > 0:
+        altura_m = altura / 100
+        imc = peso / (altura_m * altura_m)
+        if imc < 18.5:
+            imc_cat = 'Abaixo do peso'
+        elif imc < 25:
+            imc_cat = 'Normal'
+        elif imc < 30:
+            imc_cat = 'Sobrepeso'
+        else:
+            imc_cat = 'Obesidade'
+    
+    # Mapear nível -> dificuldade
+    nivel = user_data.get('nivel_atividade', '').lower()
+    if 'sedentário' in nivel or 'sedentario' in nivel:
+        difficulty = 'beginner'
+        days = 3
+    elif 'moderado' in nivel:
+        difficulty = 'beginner'
+        days = 4
+    elif 'ativo' in nivel and 'muito' not in nivel:
+        difficulty = 'intermediate'
+        days = 5
+    else:
+        difficulty = 'intermediate'
+        days = 6
+    
+    # Exercícios por tempo
+    tempo = user_data.get('tempo_disponivel', '30-45')
+    if '15-30' in tempo:
+        ex_count = 5
+    elif '30-45' in tempo:
+        ex_count = 7
+    elif '45-60' in tempo:
+        ex_count = 9
+    else:
+        ex_count = 10
+    
+    metas = ', '.join(user_data.get('metas', ['Condicionamento geral']))
+    areas = ', '.join(user_data.get('areas_desejadas', ['Corpo completo']))
+    tipos = ', '.join(user_data.get('tipos_treino', ['Variados']))
+    equip = user_data.get('equipamentos', 'Sem equipamentos')
+    
+    return f'''
+Crie um treino personalizado COMPLETO para:
+
+📊 PERFIL:
+- Nome: {user_data.get('nome', 'Usuário')}
+- {user_data.get('idade', 25)} anos, {user_data.get('sexo', 'N/A')}
+- IMC: {imc:.1f} ({imc_cat})
+- Peso: {peso}kg → Meta: {user_data.get('peso_desejado', peso)}kg
+- Altura: {altura}cm
+
+🎯 OBJETIVOS:
+- Metas: {metas}
+- Nível: {user_data.get('nivel_atividade', 'Iniciante')}
+- Foco: {areas}
+- Preferências: {tipos}
+- Equipamentos: {equip}
+- Tempo: {tempo}
+
+💪 CRIAR TREINO:
+- Dificuldade: {difficulty}
+- {days} dias/semana
+- {ex_count} exercícios
+- Duração: {tempo}
+
+⚠️ FORMATO JSON OBRIGATÓRIO (SEM MARKDOWN):
+{{
+  "workout_name": "Nome Motivacional do Treino",
+  "description": "Descrição clara dos objetivos (2-3 linhas)",
+  "difficulty_level": "{difficulty}",
+  "estimated_duration": {30 if '30-45' in tempo else 45},
+  "target_muscle_groups": "{areas}",
+  "equipment_needed": "{equip}",
+  "workout_type": "full_body",
+  "calories_estimate": 250,
+  "exercises": [
+    {{
+      "name": "Nome Específico do Exercício",
+      "description": "Como executar (máx 4 linhas)",
+      "muscle_group": "grupo_primário",
+      "difficulty_level": "{difficulty}",
+      "equipment_needed": "equipamento_ou_bodyweight",
+      "duration_minutes": 5,
+      "sets": 3,
+      "reps": "12-15",
+      "rest_time": 60,
+      "order_in_workout": 1,
+      "instructions": ["Passo 1", "Passo 2", "Passo 3"],
+      "tips": ["Dica 1", "Dica 2"]
+    }}
+  ]
+}}
+
+🚨 REGRAS:
+1. Retornar APENAS JSON (sem ```json ou explicações)
+2. Exatamente {ex_count} exercícios
+3. Nomes específicos (ex: "Agachamento Livre", não "Agachamento")
+4. Considerar equipamento: {equip}
+5. Focar nas áreas: {areas}
+6. Adaptar para nível: {difficulty}
+'''
+
+
+def _extract_json_from_ai_response(text):
+    """Extrai JSON da resposta (remove markdown)"""
+    
+    # Remover blocos markdown
+    json_match = re.search(r'```json\s*(.*?)\s*```', text, re.DOTALL)
+    if json_match:
+        json_text = json_match.group(1)
+    else:
+        # Buscar objeto JSON
+        json_match = re.search(r'\{.*\}', text, re.DOTALL)
+        if json_match:
+            json_text = json_match.group(0)
+        else:
+            json_text = text
+    
+    try:
+        return json.loads(json_text)
+    except json.JSONDecodeError as e:
+        print(f"⚠️ Erro JSON: {e}")
+        print(f"Texto: {json_text[:300]}...")
+        return None
+
+
+def _create_ai_workout(user, workout_data, user_profile):
+    """
+    Cria Workout usando APENAS campos existentes
+    
+    🔥 CAMPOS USADOS (já existem no seu modelo):
+    - is_recommended = True (marca como treino IA)
+    - is_personalized = True
+    - created_by_user = user
+    - description (pode incluir info da IA aqui)
+    """
+    
+    # Adicionar metadata da IA na descrição
+    ai_metadata = f"\n\n🤖 Treino gerado por IA em {timezone.now().strftime('%d/%m/%Y')}"
+    ai_metadata += f"\n📊 Baseado em: {', '.join(user_profile.get('metas', []))}"
+    
+    description = workout_data.get('description', '')
+    full_description = description + ai_metadata
+    
+    # Criar workout
+    workout = Workout.objects.create(
+        name=workout_data.get('workout_name', 'Treino Personalizado'),
+        description=full_description,
+        difficulty_level=workout_data.get('difficulty_level', 'beginner'),
+        estimated_duration=workout_data.get('estimated_duration', 30),
+        target_muscle_groups=workout_data.get('target_muscle_groups', ''),
+        equipment_needed=workout_data.get('equipment_needed', 'Variado'),
+        calories_estimate=workout_data.get('calories_estimate', 200),
+        workout_type=workout_data.get('workout_type', 'full_body'),
+        # 🔥 USAR CAMPOS EXISTENTES
+        is_recommended=True,  # Marca como treino gerado por IA
+        is_personalized=True,  # Personalizado para o usuário
+        created_by_user=user,  # Dono do treino
+    )
+    
+    print(f"✅ Workout criado: {workout.name} (ID: {workout.id})")
+    
+    # Adicionar exercícios
+    exercises_data = workout_data.get('exercises', [])
+    
+    for idx, ex_data in enumerate(exercises_data, start=1):
+        # Buscar ou criar exercício
+        exercise, created = Exercise.objects.get_or_create(
+            name=ex_data.get('name', f'Exercício {idx}'),
+            defaults={
+                'description': ex_data.get('description', ''),
+                'muscle_group': ex_data.get('muscle_group', 'full_body'),
+                'difficulty_level': ex_data.get('difficulty_level', 'beginner'),
+                'equipment_needed': ex_data.get('equipment_needed', 'bodyweight'),
+                'duration_minutes': ex_data.get('duration_minutes', 5),
+                'calories_per_minute': 5.0,
+                'instructions': ex_data.get('instructions', []),
+                'video_url': '',
+            }
+        )
+        
+        if created:
+            print(f"  ✅ Exercício criado: {exercise.name}")
+        else:
+            print(f"  ♻️ Exercício existente: {exercise.name}")
+        
+        # Criar WorkoutExercise
+        WorkoutExercise.objects.create(
+            workout=workout,
+            exercise=exercise,
+            sets=ex_data.get('sets', 3),
+            reps=ex_data.get('reps', '12'),
+            weight=ex_data.get('weight'),
+            rest_time=ex_data.get('rest_time', 60),
+            order_in_workout=ex_data.get('order_in_workout', idx),
+            notes='\n'.join(ex_data.get('tips', [])),
+        )
+    
+    print(f"✅ Total: {len(exercises_data)} exercícios adicionados")
+    
+    return workout
