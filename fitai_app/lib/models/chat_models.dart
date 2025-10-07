@@ -98,7 +98,11 @@ enum ConversationType {
   progressAnalysis('progress_analysis', 'Análise de Progresso', '📈'),
   motivationChat('motivation_chat', 'Motivação', '🌟'),
   techniqueGuidance('technique_guidance', 'Orientação de Técnica', '🎯'),
-  generalFitness('general_fitness', 'Fitness Geral', '🏃');
+  generalFitness('general_fitness', 'Fitness Geral', '🏃'),
+
+  workoutGeneration('workout_consultation', 'Geração de Treino', '✨'), // Usa workout_consultation
+  workoutModification('workout_consultation', 'Modificação de Treino', '✏️');
+  
 
   final String value;
   final String label;
@@ -120,3 +124,4 @@ enum MessageReaction {
 
   const MessageReaction(this.value, this.label, this.emoji);
 }
+

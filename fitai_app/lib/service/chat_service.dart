@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 import '../models/chat_models.dart';
 import 'api_service.dart';
 
-/// Serviço de gerenciamento do Chatbot
+/// Serviço de gerenciamento do Chatbot COM geração de treino
 class ChatService extends ChangeNotifier {
   // Estado
   ChatConversation? _currentConversation;
@@ -10,6 +10,10 @@ class ChatService extends ChangeNotifier {
   bool _isLoading = false;
   bool _isSending = false;
   String? _error;
+  
+  // 🔥 NOVO: Estado para geração de treino
+  bool _isGeneratingWorkout = false;
+  Map<String, dynamic>? _lastGeneratedWorkout;
 
   // Getters
   ChatConversation? get currentConversation => _currentConversation;
@@ -18,6 +22,8 @@ class ChatService extends ChangeNotifier {
   bool get isSending => _isSending;
   String? get error => _error;
   bool get hasActiveConversation => _currentConversation != null;
+  bool get isGeneratingWorkout => _isGeneratingWorkout; // 🔥 NOVO
+  Map<String, dynamic>? get lastGeneratedWorkout => _lastGeneratedWorkout; // 🔥 NOVO
 
   // ============================================================
   // INICIAR CONVERSA
@@ -26,6 +32,7 @@ class ChatService extends ChangeNotifier {
   Future<bool> startConversation({
     ConversationType type = ConversationType.generalFitness,
     String? initialMessage,
+    bool forceNew = true,
   }) async {
     try {
       _isLoading = true;
@@ -37,6 +44,7 @@ class ChatService extends ChangeNotifier {
       final response = await ApiService.startConversation(
         conversationType: type.value,
         initialMessage: initialMessage,
+        forceNew: forceNew,
       );
 
       if (response['conversation_id'] != null) {
@@ -143,6 +151,142 @@ class ChatService extends ChangeNotifier {
   }
 
   // ============================================================
+  // 🔥 NOVO: GERAR TREINO COM IA
+  // ============================================================
+
+    /// Gera um treino personalizado usando as informações da conversa
+  Future<bool> generateWorkoutFromConversation() async {
+    if (_currentConversation == null) {
+      debugPrint('⚠️ Nenhuma conversa ativa');
+      _error = 'Inicie uma conversa antes de gerar um treino';
+      notifyListeners();
+      return false;
+    }
+
+    try {
+      _isGeneratingWorkout = true;
+      notifyListeners();
+
+      debugPrint('🏋️ Gerando treino com base na conversa ${_currentConversation!.id}');
+
+      // Chamar o endpoint de geração de treino
+      final response = await ApiService.generateAIWorkoutPlan();
+
+      debugPrint('📦 Resposta completa do backend:');
+      debugPrint(response.toString());
+
+      // Verificar se o treino foi criado com sucesso
+      if (response.containsKey('workout_created') && response['workout_created'] == true) {
+        // ✅ Formato esperado: treino já criado no banco
+        final workout = response['workout'];
+        debugPrint('✅ Treino gerado com sucesso!');
+        debugPrint('   ID: ${workout['id']}');
+        debugPrint('   Nome: ${workout['name']}');
+        debugPrint('   Exercícios: ${workout['exercises']?.length ?? 0}');
+
+        _isGeneratingWorkout = false;
+        notifyListeners();
+        return true;
+        
+      } else if (response.containsKey('ai_generated_workout')) {
+        // 📝 Formato alternativo: apenas o plano foi gerado, precisamos criar o treino
+        debugPrint('📝 Backend retornou apenas o plano. Criando treino no banco...');
+        
+        final aiWorkout = response['ai_generated_workout'];
+        final planInfo = aiWorkout['plan_info'] as Map<String, dynamic>;
+        final workoutPlan = aiWorkout['workout_plan'] as List<dynamic>;
+
+        // Criar nome inteligente para o treino
+        final focus = planInfo['focus'] ?? 'full_body';
+        final duration = planInfo['estimated_duration'] ?? 30;
+        final focusCapitalized = focus.toString().replaceAll('_', ' ').split(' ')
+            .map((word) => word.isNotEmpty ? word[0].toUpperCase() + word.substring(1) : '')
+            .join(' ');
+        final workoutName = 'Treino IA - $focusCapitalized ($duration min)';
+
+        debugPrint('📝 Criando treino: $workoutName');
+
+        // 1. Criar o treino no banco
+        final createResponse = await ApiService.createWorkout(
+          name: workoutName,
+          description: 'Treino personalizado gerado pela IA com base na conversa',
+          difficultyLevel: planInfo['difficulty']?.toString() ?? 'intermediate',
+          estimatedDuration: duration,
+          workoutType: focus.toString(),
+        );
+
+        // Extrair ID do treino (pode estar em 'id' ou 'workout.id')
+        int? newWorkoutId;
+        if (createResponse.containsKey('id')) {
+          newWorkoutId = createResponse['id'] as int;
+        } else if (createResponse.containsKey('workout') && 
+                   createResponse['workout'] is Map &&
+                   (createResponse['workout'] as Map).containsKey('id')) {
+          newWorkoutId = (createResponse['workout'] as Map)['id'] as int;
+        }
+
+        if (newWorkoutId == null) {
+          throw Exception('Backend não retornou ID do treino criado');
+        }
+
+        debugPrint('✅ Treino criado no banco! ID: $newWorkoutId');
+
+        // 2. Adicionar cada exercício ao treino
+        debugPrint('📋 Adicionando ${workoutPlan.length} exercícios...');
+        
+        int successCount = 0;
+        for (var exerciseData in workoutPlan) {
+          try {
+            final exercise = exerciseData['exercise'] as Map<String, dynamic>;
+            final exerciseId = exercise['id'] as int;
+            final exerciseName = exercise['name'] as String;
+            final orderNum = exerciseData['order'] as int;
+            
+            await ApiService.addExerciseToWorkout(
+              workoutId: newWorkoutId,
+              exerciseId: exerciseId,
+              sets: exerciseData['sets'] as int,
+              reps: exerciseData['reps']?.toString() ?? '8-12',
+              restTime: exerciseData['rest_time_seconds'] as int,
+              orderInWorkout: orderNum,
+            );
+            
+            successCount++;
+            debugPrint('   ✅ [$successCount/${workoutPlan.length}] $exerciseName adicionado');
+            
+          } catch (e) {
+            final exerciseName = (exerciseData['exercise'] as Map)['name'];
+            debugPrint('   ⚠️ Erro ao adicionar $exerciseName: $e');
+          }
+        }
+
+        if (successCount == 0) {
+          throw Exception('Nenhum exercício foi adicionado ao treino');
+        }
+
+        debugPrint('🎉 Treino criado! $successCount/${ workoutPlan.length} exercícios adicionados');
+        
+        _isGeneratingWorkout = false;
+        notifyListeners();
+        return true;
+
+      } else {
+        debugPrint('❌ Resposta não contém workout_created nem ai_generated_workout');
+        debugPrint('   Keys disponíveis: ${response.keys.join(", ")}');
+        throw Exception('Formato de resposta desconhecido do backend');
+      }
+
+    } catch (e, stackTrace) {
+      debugPrint('❌ Erro ao gerar treino: $e');
+      debugPrint('Stack trace: $stackTrace');
+      _error = 'Erro ao gerar treino: $e';
+      _isGeneratingWorkout = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  // ============================================================
   // CARREGAR HISTÓRICO
   // ============================================================
 
@@ -196,6 +340,7 @@ class ChatService extends ChangeNotifier {
 
       _currentConversation = null;
       _messages.clear();
+      _lastGeneratedWorkout = null; // 🔥 LIMPAR TREINO GERADO
 
       debugPrint('✅ Conversa finalizada');
       notifyListeners();
@@ -336,6 +481,8 @@ class ChatService extends ChangeNotifier {
     _isLoading = false;
     _isSending = false;
     _error = null;
+    _isGeneratingWorkout = false; // 🔥 LIMPAR
+    _lastGeneratedWorkout = null; // 🔥 LIMPAR
     notifyListeners();
   }
 }

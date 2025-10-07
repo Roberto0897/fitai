@@ -446,7 +446,7 @@ REST_FRAMEWORK_THROTTLE_RATES = {
     'anon': '100/hour',                  # Usuários anônimos
     
     # Rate limits específicos do chatbot
-    'chatbot_start': '50/hour',          # Iniciar conversas
+    'chatbot_start': '100/hour',          # Iniciar conversas
     'chatbot_message': '150/hour',        # Enviar mensagens
     'chatbot_history': '50/hour',        # Ver histórico
     'chatbot_analytics': '10/hour',      # Analytics do chat
@@ -475,8 +475,8 @@ CHATBOT_SETTINGS = {
 
 # Rate limiting específico para chatbot (mais detalhado)
 CHATBOT_RATE_LIMITS = {
-    'start_conversation': '50/hour',       # Criar conversas
-    'send_message': '150/hour',             # Enviar mensagens
+    'start_conversation': '70/hour',       # Criar conversas
+    'send_message': '200/hour',             # Enviar mensagens
     'conversation_history': '50/hour',     # Ver histórico
     'user_conversations': '20/hour',       # Listar conversas
     'end_conversation': '20/hour',         # Finalizar conversas
@@ -484,7 +484,7 @@ CHATBOT_RATE_LIMITS = {
     'chat_analytics': '10/hour',           # Ver analytics
     
     # Limites diários
-    'daily_messages': '200/day',           # Mensagens por dia
+    'daily_messages': '300/day',           # Mensagens por dia
     'daily_conversations': '50/day',       # Conversas por dia
 }
 

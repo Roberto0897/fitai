@@ -3,9 +3,20 @@ import 'package:provider/provider.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../service/chat_service.dart';
 import '../../../models/chat_models.dart';
+import '../../../core/router/app_router.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 
 class ChatBotPage extends StatefulWidget {
-  const ChatBotPage({super.key});
+  final String? initialContext;
+  final int? workoutId;
+  final String? initialMessage;
+  
+  const ChatBotPage({
+    super.key,
+    this.initialContext,
+    this.workoutId,
+    this.initialMessage,
+  });
 
   @override
   State<ChatBotPage> createState() => _ChatBotPageState();
@@ -31,18 +42,53 @@ void initState() {
     super.dispose();
   }
 
-  Future<void> _initializeChat() async {
-    final chatService = context.read<ChatService>();
+ Future<void> _initializeChat() async {
+  final chatService = context.read<ChatService>();
+  
+  // Se não há conversa ativa, iniciar uma com contexto
+  if (!chatService.hasActiveConversation) {
+    ConversationType conversationType;
+    String? firstMessage;
     
-    // Se não há conversa ativa, iniciar uma
-    if (!chatService.hasActiveConversation) {
-      await chatService.startConversation(
-        type: ConversationType.generalFitness,
-      );
+    if (widget.initialContext == 'workout_generation') {
+      // 🔥 USA workout_consultation (tipo existente no backend)
+      conversationType = ConversationType.workoutConsultation;
+      firstMessage = widget.initialMessage ?? 
+          '🏋️ Olá! Gostaria de criar um treino personalizado para mim baseado no meu perfil e objetivos.';
+      
+      debugPrint('🤖 CHATBOT: Iniciando geração de treino (como workout_consultation)');
+      
+    } else if (widget.initialContext == 'workout_modification' && widget.workoutId != null) {
+      // 🔥 USA workout_consultation (tipo existente no backend)
+      conversationType = ConversationType.workoutConsultation;
+      firstMessage = widget.initialMessage ?? 
+          '✏️ Quero modificar meu treino atual (ID: ${widget.workoutId}). Pode me ajudar a ajustá-lo?';
+      
+      debugPrint('🤖 CHATBOT: Iniciando modificação do treino ${widget.workoutId} (como workout_consultation)');
+      
+    } else if (widget.initialMessage != null) {
+      conversationType = ConversationType.generalFitness;
+      firstMessage = widget.initialMessage;
+      
+      debugPrint('🤖 CHATBOT: Conversa geral com mensagem inicial');
+      
+    } else {
+      conversationType = ConversationType.generalFitness;
+      firstMessage = null;
+      
+      debugPrint('🤖 CHATBOT: Conversa geral sem contexto');
     }
-
-    setState(() => _isInitialized = true);
+    
+    // Iniciar conversa
+    await chatService.startConversation(
+      type: conversationType,
+      initialMessage: firstMessage,
+      forceNew: true,     
+    );
   }
+
+  setState(() => _isInitialized = true);
+}
 
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -51,6 +97,7 @@ void initState() {
           _scrollController.position.maxScrollExtent,
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeOut,
+          
         );
       }
     });
@@ -172,6 +219,8 @@ void initState() {
                     if (chatService.messages.length <= 1)
                       _buildQuickSuggestions(),
 
+                    _buildCreateWorkoutButton(chatService),
+
                     // Input de mensagem
                     _buildMessageInput(chatService.isSending),
                   ],
@@ -254,16 +303,49 @@ void initState() {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    message.text,
-                    style: TextStyle(
-                      color: message.isUser
-                          ? Colors.white
-                          : AppColors.textPrimary,
-                      fontSize: 15,
-                      height: 1.4,
+                  // Se for mensagem da IA, usar Markdown
+                  if (!message.isUser)
+                    MarkdownBody(
+                      data: message.text,
+                      styleSheet: MarkdownStyleSheet(
+                        p: TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 15,
+                          height: 1.4,
+                        ),
+                        strong: TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        em: TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 15,
+                          fontStyle: FontStyle.italic,
+                        ),
+                        code: TextStyle(
+                          backgroundColor: Colors.black26,
+                          color: AppColors.textPrimary,
+                          fontSize: 14,
+                          fontFamily: 'monospace',
+                        ),
+                        blockquote: TextStyle(
+                          color: AppColors.textPrimary.withOpacity(0.8),
+                          fontSize: 14,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    )
+                  else
+                    // Mensagem do usuário sem markdown
+                    Text(
+                      message.text,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        height: 1.4,
+                      ),
                     ),
-                  ),
                   // Confidence indicator para mensagens da IA
                   if (!message.isUser && message.confidence != null)
                     Padding(
@@ -425,6 +507,110 @@ void initState() {
     );
   }
 
+  // Novo método para mostrar botão de criar treino
+Widget _buildCreateWorkoutButton(ChatService chatService) {
+  // Só mostrar se:
+  // 1. Conversa for de workout_consultation
+  // 2. Houver mensagens suficientes (> 4)
+  // 3. Não estiver já gerando
+  
+  final shouldShow = chatService.currentConversation?.type == 'workout_consultation' &&
+                     chatService.messages.length >= 4 &&
+                     !chatService.isGeneratingWorkout;
+  
+  if (!shouldShow) return const SizedBox.shrink();
+  
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+    decoration: BoxDecoration(
+      color: const Color(0xFF2A2A2A),
+      border: Border(
+        top: BorderSide(
+          color: const Color(0xFF424242),
+          width: 1,
+        ),
+      ),
+    ),
+    child: SafeArea(
+      top: false,
+      child: ElevatedButton.icon(
+        onPressed: () async {
+          // Confirmar antes de gerar
+          final confirm = await showDialog<bool>(
+            context: context,
+            builder: (context) => AlertDialog(
+              backgroundColor: const Color(0xFF2A2A2A),
+              title: const Text(
+                'Criar Treino',
+                style: TextStyle(color: Colors.white),
+              ),
+              content: const Text(
+                'Deseja criar um treino personalizado com base nessa conversa?',
+                style: TextStyle(color: Colors.white70),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Cancelar'),
+                ),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF00BCD4),
+                  ),
+                  child: const Text('Criar'),
+                ),
+              ],
+            ),
+          );
+          
+          if (confirm == true) {
+            final success = await chatService.generateWorkoutFromConversation();
+            
+            if (success && mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: const Text('✅ Treino criado com sucesso!'),
+                  backgroundColor: Colors.green,
+                  action: SnackBarAction(
+                    label: 'Ver Treinos',
+                    textColor: Colors.white,
+                    onPressed: () {
+                      AppRouter.goToWorkouts();
+                    },
+                  ),
+                ),
+              );
+            }
+          }
+        },
+        icon: chatService.isGeneratingWorkout
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              )
+            : const Icon(Icons.fitness_center),
+        label: Text(
+          chatService.isGeneratingWorkout 
+              ? 'Criando treino...' 
+              : '✨ Criar Treino Personalizado',
+        ),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFF00BCD4),
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      ),
+    ),
+  );
+}
   Widget _buildMessageInput(bool isDisabled) {
     return Container(
       padding: const EdgeInsets.all(16),

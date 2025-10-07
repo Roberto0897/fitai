@@ -10,6 +10,7 @@ import 'package:provider/provider.dart';
 import 'providers/user_profile_provider.dart';
 import 'providers/reports_provider.dart';
 import 'package:fitai_app/service/chat_service.dart';
+import 'providers/dashboard_provider.dart';
 
 
 void main() async {
@@ -66,6 +67,10 @@ class FitAIApp extends StatelessWidget {
         ),
         ChangeNotifierProvider(
           create: (_) => ChatService(), // ← ADICIONE ESTA LINHA
+          lazy: false,
+        ),
+         ChangeNotifierProvider(
+          create: (_) => DashboardProvider(),
           lazy: false,
         ),
       ],

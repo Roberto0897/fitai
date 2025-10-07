@@ -74,6 +74,7 @@ dev_dependencies:
   json_serializable: ^6.7.1
   injectable_generator: ^2.4.1
   retrofit_generator: ^10.0.5
+  flutter_markdown: ^0.6.18
 
   # Testing
   mockito: ^5.4.2

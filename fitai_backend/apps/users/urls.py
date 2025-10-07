@@ -17,12 +17,12 @@ urlpatterns = [
 
     #novo
     # ANALYTICS - IMPORTANTE: deve estar em /users/analytics/ para o Flutter
-    path('user/analytics/', views.user_analytics, name='user_analytics'),
+    path('users/analytics/', views.user_analytics, name='user_analytics'),
     
     # PESO
-    path('user/weight_history/', views.weight_history, name='weight_history'),
-    path('user/add_weight/', views.add_weight_log, name='add_weight_log'),
+    path('users/weight_history/', views.weight_history, name='weight_history'),
+    path('users/add_weight/', views.add_weight_log, name='add_weight_log'),
     
     # Perfil
-    path('user/profile/', views.user_dashboard, name='user_profile'),
+    path('users/profile/', views.user_dashboard, name='user_profile'),
 ]

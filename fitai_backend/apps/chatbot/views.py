@@ -127,7 +127,10 @@ def test_chatbot_api(request):
             "progress_analysis",
             "motivation_chat",
             "technique_guidance",
-            "general_fitness"
+            "general_fitness",
+
+          #  'workout_generation',
+          #  'workout_modification',
         ]
     }
     

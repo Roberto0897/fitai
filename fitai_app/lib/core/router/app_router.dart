@@ -158,12 +158,20 @@ class AppRouter {
         },
       ),
     
-       GoRoute(
+        GoRoute(
         path: AppRoutes.chatbot,
         name: 'chatbot',
         builder: (context, state) {
           debugPrint('📱 ROUTER: Construindo ChatBotPage');
-          return const ChatBotPage();
+          
+          // 🔥 EXTRAIR PARÂMETROS EXTRAS
+          final extra = state.extra as Map<String, dynamic>?;
+          
+          return ChatBotPage(
+            initialContext: extra?['context'] as String?,
+            workoutId: extra?['workoutId'] as int?,
+            initialMessage: extra?['initialMessage'] as String?,
+          );
         },
       ),
 
@@ -315,10 +323,21 @@ static void goToReports() {
     }
   }
 
-    static void goToChatBot() {
+    static void goToChatBot({
+    String? initialContext,
+    int? workoutId,
+    String? initialMessage,
+  }) {
     try {
-      _router.push(AppRoutes.chatbot);
-      debugPrint('✅ Navegação para Chat Bot realizada');
+      _router.push(
+        AppRoutes.chatbot,
+        extra: {
+          'context': initialContext,
+          'workoutId': workoutId,
+          'initialMessage': initialMessage,
+        },
+      );
+      debugPrint('✅ Navegação para Chat Bot (context: $initialContext)');
     } catch (e) {
       debugPrint('❌ Erro ao navegar para Chat Bot: $e');
     }

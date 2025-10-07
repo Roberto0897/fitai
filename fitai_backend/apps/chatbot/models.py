@@ -23,6 +23,9 @@ class Conversation(models.Model):
         ('motivation_chat', 'Chat Motivacional'),
         ('technique_guidance', 'Orientação Técnica'),
         ('general_fitness', 'Fitness Geral'),
+
+       # ('workout_generation', 'Geração de Treino'),
+      #  ('workout_modification', 'Modificação de Treino'),
     ]
     
     # Relacionamentos
