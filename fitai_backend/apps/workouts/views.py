@@ -11,6 +11,9 @@ import google.generativeai as genai
 from apps.recommendations.services.recommendation_engine import RecommendationEngine
 from apps.recommendations.services.ai_service import AIService
 import logging
+from django.conf import settings
+import re
+import json
 
 @api_view(['GET'])
 def test_workouts_api(request):
@@ -570,7 +573,6 @@ def cancel_session(request):
         return Response({"error": "Nenhuma sessão ativa encontrada"}, 
                        status=status.HTTP_404_NOT_FOUND)
 
-# ADICIONAR AO FINAL DO ARQUIVO apps/workouts/views.py
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
@@ -1332,71 +1334,65 @@ def cancel_active_session(request, session_id):
 def generate_onboarding_workout(request):
     """
     🤖 Gera treino personalizado com IA durante o cadastro/onboarding
-    
-    Body esperado:
-    {
-        "user_data": {
-            "nome": "João", "idade": 25, "sexo": "Masculino",
-            "peso_atual": 70, "peso_desejado": 65, "altura": 170,
-            "metas": ["Emagrecimento"], "nivel_atividade": "Moderado",
-            "areas_desejadas": ["Abdômen", "Pernas"],
-            "tipos_treino": ["Cardio"], "equipamentos": "Academia completa",
-            "tempo_disponivel": "30-45 minutos"
-        },
-        "ai_prompt": "prompt opcional",
-        "create_workout": true
-    }
     """
     try:
+        from django.conf import settings
+        import google.generativeai as genai
+        
         user = request.user
         user_data = request.data.get('user_data', {})
         ai_prompt = request.data.get('ai_prompt')
         create_workout = request.data.get('create_workout', True)
         
         print(f"🤖 Gerando treino IA para: {user.email}")
-        print(f"📊 Dados: {user_data}")
         
-        # Construir prompt se não foi fornecido
+        # Construir prompt
         if not ai_prompt:
             ai_prompt = _build_onboarding_prompt(user_data)
         
-        print(f"📝 Prompt: {len(ai_prompt)} chars")
+        # ✅ CONFIGURAR GEMINI
+        api_key = getattr(settings, 'GEMINI_API_KEY', '')
+        if not api_key:
+            raise ValueError("GEMINI_API_KEY não está configurada")
         
-        # Gerar com Gemini
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        genai.configure(api_key=api_key)
+        
+        # ✅ USAR EXATAMENTE O MESMO PADRÃO DO CHAT SERVICE
+        model_name = getattr(settings, 'GEMINI_MODEL', 'gemini-2.0-flash-exp')
+        print(f"🤖 Modelo: {model_name}")
+        
+        model = genai.GenerativeModel(model_name)
         print("📡 Chamando Gemini...")
         response = model.generate_content(ai_prompt)
         
         ai_text = response.text
-        print(f"📨 Resposta: {len(ai_text)} chars")
+        print(f"✅ Resposta: {len(ai_text)} chars")
         
         # Parsear JSON
         workout_data = _extract_json_from_ai_response(ai_text)
         
         if not workout_data:
-            raise ValueError("Não foi possível extrair JSON válido da IA")
+            raise ValueError("JSON inválido da IA")
         
-        print(f"✅ JSON parseado: {workout_data.get('workout_name', 'Sem nome')}")
-        
-        # Criar no banco
+        # Criar treino
         if create_workout:
             workout = _create_ai_workout(user, workout_data, user_data)
             
             return Response({
                 'success': True,
-                'message': 'Treino personalizado criado com sucesso!',
+                'message': 'Treino criado com sucesso!',
                 'workout_id': workout.id,
                 'workout_name': workout.name,
                 'exercises_count': workout.workout_exercises.count(),
                 'estimated_duration': workout.estimated_duration,
                 'difficulty_level': workout.difficulty_level,
-                'is_ai_generated': True,  # Frontend sabe que veio da IA
+                'is_ai_generated': True,
             }, status=status.HTTP_201_CREATED)
         else:
             return Response({
                 'success': True,
                 'workout_data': workout_data,
-            }, status=status.HTTP_200_OK)
+            })
             
     except Exception as e:
         print(f"❌ Erro: {str(e)}")

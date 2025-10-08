@@ -26,6 +26,13 @@ class UserProfile(models.Model):
                                  help_text="Áreas de foco separadas por vírgula")
     current_weight = models.FloatField(blank=True, null=True)
     target_weight = models.FloatField(blank=True, null=True)
+
+    # tres campos novos
+    age = models.IntegerField(null=True, blank=True, verbose_name='Idade')
+    gender = models.CharField(max_length=1, null=True, blank=True, 
+                              choices=[('M', 'Masculino'), ('F', 'Feminino'), ('O', 'Outro')],
+                              verbose_name='Sexo')
+    height = models.FloatField(null=True, blank=True, verbose_name='Altura (cm)')
     
     def __str__(self):
         return f"Perfil - {self.user.username}"

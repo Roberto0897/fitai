@@ -151,6 +151,10 @@ def user_dashboard(request):
                 'bio': profile.bio,
                 'current_weight': profile.current_weight,
                 'target_weight': profile.target_weight,
+
+                'age': profile.age,
+                'gender': profile.gender,
+                'height': profile.height,
             },
             'progress': {
                 'id': progress.id,
@@ -205,6 +209,20 @@ def register_user(request):
             profile.current_weight = float(data['peso_atual'])
         if 'peso_desejado' in data:
             profile.target_weight = float(data['peso_desejado'])
+
+        if 'idade' in data:
+            profile.age = int(data['idade'])
+        
+        if 'sexo' in data:
+            gender_map = {
+                'Masculino': 'M',
+                'Feminino': 'F',
+                'Outro': 'O'
+            }
+            profile.gender = gender_map.get(data['sexo'], 'O')
+        
+        if 'altura' in data:
+            profile.height = float(data['altura'])
         
         profile.save()
         

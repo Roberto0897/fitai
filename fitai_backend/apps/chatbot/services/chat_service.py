@@ -48,7 +48,7 @@ class ChatService:
                     'context_loaded': True
                 }
             
-            # ✅ CORRIGIDO: Usar GEMINI_MODEL
+            
             conversation = Conversation.objects.create(
                 user=user,
                 conversation_type=conversation_type,
