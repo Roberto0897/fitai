@@ -25,7 +25,9 @@ def list_exercises(request):
             'difficulty_level': exercise.difficulty_level,
             'equipment_needed': exercise.equipment_needed,
             'duration_minutes': exercise.duration_minutes,
-            'calories_per_minute': exercise.calories_per_minute
+            'calories_per_minute': exercise.calories_per_minute,
+            'video_url': exercise.video_url,
+            'instructions': exercise.instructions,
         })
     
     return Response({
@@ -53,7 +55,9 @@ def exercises_by_muscle_group(request):
             'description': exercise.description,
             'difficulty_level': exercise.difficulty_level,
             'equipment_needed': exercise.equipment_needed,
-            'duration_minutes': exercise.duration_minutes
+            'duration_minutes': exercise.duration_minutes,
+            'video_url': exercise.video_url,
+            'instructions': exercise.instructions,
         })
     
     return Response({
@@ -83,7 +87,8 @@ def search_exercises(request):
             'name': exercise.name,
             'description': exercise.description,
             'muscle_group': exercise.muscle_group,
-            'difficulty_level': exercise.difficulty_level
+            'difficulty_level': exercise.difficulty_level,
+            'video_url': exercise.video_url,
         })
     
     return Response({
@@ -109,7 +114,7 @@ def exercise_detail(request, exercise_id):
             'duration_minutes': exercise.duration_minutes,
             'calories_per_minute': exercise.calories_per_minute,
             'instructions': exercise.instructions,
-            'video_url': exercise.video_url
+            'video_url': exercise.video_url,
         })
     except Exercise.DoesNotExist:
         return Response({"error": "Exercício não encontrado"}, 

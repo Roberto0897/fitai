@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../service/api_service.dart';
 import '../models/workout_history_model.dart';
+import 'dart:convert';
 
 /// Provider para gerenciar dados do Dashboard
 /// ✨ ATUALIZADO: Integração completa com IA Gemini

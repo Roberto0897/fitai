@@ -238,52 +238,162 @@ class ApiService {
   }
   
   /// Iniciar sessão de treino
+ /// ✅ CORRIGIDO: Iniciar sessão COM verificação prévia
   static Future<Map<String, dynamic>> startWorkoutSession(int workoutId) async {
-    return await post('/workouts/$workoutId/start/', {});
+    try {
+      print('🏁 Tentando iniciar sessão para workout $workoutId...');
+      
+      // ✅ PASSO 1: Verificar se já existe sessão ativa
+      final activeSession = await getActiveSession();
+      
+      if (activeSession != null) {
+        final sessionId = activeSession['active_session_id'];
+        final workoutName = activeSession['active_workout'];
+        
+        print('⚠️ JÁ EXISTE SESSÃO ATIVA:');
+        print('   Session ID: $sessionId');
+        print('   Workout: $workoutName');
+        
+        // ✅ Lançar exceção específica com dados da sessão
+        throw ActiveSessionException(
+          sessionId: sessionId,
+          workoutName: workoutName,
+          startedAt: activeSession['started_at'],
+          workoutId: activeSession['workout_id'],
+        );
+      }
+      
+      // ✅ PASSO 2: Iniciar nova sessão
+      print('✅ Nenhuma sessão ativa, iniciando nova sessão...');
+      final response = await post('/workouts/$workoutId/start/', {});
+      
+      print('✅ Sessão iniciada com sucesso!');
+      print('   Session ID: ${response['session_id']}');
+      
+      return response;
+      
+    } catch (e) {
+      print('❌ Erro ao iniciar sessão: $e');
+      rethrow;
+    }
   }
   
-  /// Completar sessão de treino
-  static Future<Map<String, dynamic>> completeWorkoutSession({
-    int? userRating,
-    int? caloriesBurned,
-    String? notes,
-  }) async {
-    return await post('/workouts/sessions/complete/', {
-      if (userRating != null) 'user_rating': userRating,
-      if (caloriesBurned != null) 'calories_burned': caloriesBurned,
-      if (notes != null) 'notes': notes,
-    });
-  }
-  // ============================================================
-// ADICIONE ESTES MÉTODOS NA SEÇÃO DE WORKOUTS DO SEU API_SERVICE
-// (depois do método completeWorkoutSession)
-// ============================================================
-
-/// Buscar sessão ativa do usuário
-static Future<Map<String, dynamic>?> getActiveSession() async {
+  // ✅ CORRIGIDO: Completar sessão de treino
+static Future<Map<String, dynamic>> completeWorkoutSession({
+  int? sessionId,
+  int? userRating,
+  int? caloriesBurned,
+  String? notes,
+}) async {
   try {
-    print('🔍 Buscando sessão ativa...');
-    final response = await get('/workouts/sessions/active/');
-    print('✅ Sessão ativa encontrada: $response');
-    return response;
-  } catch (e) {
-    // Se retornar 404, significa que não há sessão ativa
-    if (e is ApiException && e.statusCode == 404) {
-      print('ℹ️ Nenhuma sessão ativa encontrada');
-      return null;
+    int? finalSessionId = sessionId;
+    
+    if (finalSessionId == null) {
+      print('🔍 SessionId não fornecido, buscando sessão ativa...');
+      final activeSession = await getActiveSession();
+      
+      if (activeSession == null || activeSession['active_session_id'] == null) {
+        throw Exception('Nenhuma sessão ativa encontrada para finalizar');
+      }
+      
+      finalSessionId = activeSession['active_session_id'];
     }
-    print('❌ Erro ao buscar sessão ativa: $e');
+    
+    print('🏁 Finalizando sessão $finalSessionId no backend...');
+    print('   Rating: $userRating');
+    print('   Calorias: $caloriesBurned');
+    print('   Notas: $notes');
+    
+    // ✅ MUDANÇA: Usar a rota com session_id na URL
+    final response = await post(
+      '/workouts/sessions/$finalSessionId/complete/',
+      {
+        if (userRating != null) 'user_rating': userRating,
+        if (caloriesBurned != null) 'calories_burned': caloriesBurned,
+        if (notes != null && notes.isNotEmpty) 'notes': notes,
+      },
+    );
+    
+    print('✅ Sessão $finalSessionId finalizada com sucesso!');
+    print('📊 Resposta do backend: $response');
+    
+    return response;
+    
+  } catch (e) {
+    print('❌ Erro ao finalizar sessão: $e');
     rethrow;
   }
 }
-
-/// Cancelar sessão ativa
-static Future<Map<String, dynamic>> cancelActiveSession(int sessionId) async {
-  print('🗑️ Cancelando sessão $sessionId...');
-  final response = await post('/workouts/sessions/$sessionId/cancel/', {});
-  print('✅ Sessão cancelada com sucesso');
-  return response;
+  
+  /// ✅ CORRIGIDO: Buscar sessão ativa
+  static Future<Map<String, dynamic>?> getActiveSession() async {
+    try {
+      print('🔍 Buscando sessão ativa...');
+      final response = await get('/workouts/sessions/active/');
+      print('✅ Sessão ativa encontrada: $response');
+      return response;
+    } catch (e) {
+      if (e is ApiException && e.statusCode == 404) {
+        print('ℹ️ Nenhuma sessão ativa encontrada');
+        return null;
+      }
+      print('❌ Erro ao buscar sessão ativa: $e');
+      rethrow;
+    }
+  }
+  
+ static Future<Map<String, dynamic>> cancelActiveSession(int sessionId) async {
+  try {
+    print('🗑️ Cancelando sessão $sessionId...');
+    
+    // ✅ Usar POST em vez de DELETE
+    final response = await post(
+      '/workouts/sessions/$sessionId/cancel/',
+      {},  // body vazio
+    );
+    
+    print('✅ Sessão cancelada com sucesso');
+    return response;
+    
+  } catch (e) {
+    print('❌ Erro ao cancelar sessão: $e');
+    rethrow;
+  }
 }
+  
+  /// ✅ NOVO: Método auxiliar para lidar com sessão travada
+  static Future<void> handleStuckSession() async {
+    try {
+      print('🔧 Tentando resolver sessão travada...');
+      
+      final activeSession = await getActiveSession();
+      
+      if (activeSession == null) {
+        print('ℹ️ Nenhuma sessão travada encontrada');
+        return;
+      }
+      
+      final sessionId = activeSession['active_session_id'];
+      print('⚠️ Sessão travada encontrada: $sessionId');
+      
+      try {
+        await completeWorkoutSession(
+          sessionId: sessionId,
+          userRating: null,
+          notes: 'Sessão finalizada automaticamente (travada)',
+        );
+        print('✅ Sessão travada finalizada com sucesso');
+      } catch (e) {
+        print('⚠️ Não foi possível finalizar, tentando cancelar...');
+        await cancelActiveSession(sessionId);
+        print('✅ Sessão travada cancelada com sucesso');
+      }
+      
+    } catch (e) {
+      print('❌ Erro ao resolver sessão travada: $e');
+      rethrow;
+    }
+  }
   /// Histórico de treinos
   static Future<Map<String, dynamic>> getWorkoutHistory() async {
     return await get('/workouts/sessions/history/');
@@ -531,6 +641,20 @@ static Future<Map<String, dynamic>> getChatAnalytics({
 }) async {
   return await get('/chat/analytics/?days=$days');
 }
+
+static Future<Map<String, dynamic>> generateWorkoutFromChat({
+  int? conversationId,
+  int? daysPerWeek,
+  String? focus,
+}) async {
+  return await post('/recommendations/generate-workout-from-chat/', {  // 🔥 Endpoint específico!
+    if (conversationId != null) 'conversation_id': conversationId,
+    'user_preferences': {
+      if (daysPerWeek != null) 'days_per_week': daysPerWeek,
+      if (focus != null) 'focus': focus,
+    },
+  });
+}
   // ============================================================
   // TESTE DE CONEXÃO
   // ============================================================
@@ -564,8 +688,22 @@ class ApiException implements Exception {
   
   @override
   String toString() => 'ApiException($statusCode): $message';
+}
 
+/// ✅ Exception específica para sessão ativa
+class ActiveSessionException implements Exception {
+  final int sessionId;
+  final String workoutName;
+  final String? startedAt;
+  final int? workoutId;
   
-
+  ActiveSessionException({
+    required this.sessionId,
+    required this.workoutName,
+    this.startedAt,
+    this.workoutId,
+  });
   
+  @override
+  String toString() => 'ActiveSessionException: Sessão $sessionId já está ativa ($workoutName)';
 }

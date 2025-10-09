@@ -5,6 +5,7 @@ import '../../../service/api_service.dart';
 import 'workout_detail_page.dart';
 import 'create_workout_page.dart';
 
+
 class WorkoutsPage extends StatefulWidget {
   const WorkoutsPage({super.key});
 
@@ -91,6 +92,10 @@ class _WorkoutsPageState extends State<WorkoutsPage> with TickerProviderStateMix
       
       setState(() {
         _allExercises = exercisesList.map((exercise) {
+          print('🎥 Exercício: ${exercise['name']}');
+          print('   video_url: ${exercise['video_url']}');
+          print('   image_url: ${exercise['image_url']}');
+          
           return ExerciseModel(
             id: exercise['id'],
             name: exercise['name'] ?? 'Sem nome',
@@ -99,6 +104,8 @@ class _WorkoutsPageState extends State<WorkoutsPage> with TickerProviderStateMix
             difficulty: _mapDifficulty(exercise['difficulty_level']),
             equipment: exercise['equipment_needed'] ?? 'Não especificado',
             series: '3',
+            videoUrl: exercise['video_url'],  // ✅ ADICIONADO
+            imageUrl: exercise['image_url'],  // ✅ ADICIONADO
           );
         }).toList();
         _isLoadingExercises = false;
@@ -507,90 +514,88 @@ class _WorkoutsPageState extends State<WorkoutsPage> with TickerProviderStateMix
     );
   }
 
-  // NOVO: Aba Meus Treinos com FutureBuilder
   Widget _buildMyWorkouts() {
-  return FutureBuilder<Map<String, dynamic>>(
-    // ✅ Melhor: use o método específico que já retorna o tipo correto
-    future: ApiService.getMyWorkouts(),
-    builder: (context, snapshot) {
-      if (snapshot.connectionState == ConnectionState.waiting) {
-        return const Center(
-          child: CircularProgressIndicator(color: AppColors.primary),
-        );
-      }
+    return FutureBuilder<Map<String, dynamic>>(
+      future: ApiService.getMyWorkouts(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: CircularProgressIndicator(color: AppColors.primary),
+          );
+        }
 
-      if (snapshot.hasError) {
-        return Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(Icons.error_outline, size: 64, color: Colors.red),
-              const SizedBox(height: 16),
-              Text(
-                'Erro ao carregar treinos: ${snapshot.error}',
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: AppColors.textSecondary),
-              ),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: () {
-                  setState(() {});
-                },
-                child: const Text('Tentar Novamente'),
-              ),
-            ],
+        if (snapshot.hasError) {
+          return Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.error_outline, size: 64, color: Colors.red),
+                const SizedBox(height: 16),
+                Text(
+                  'Erro ao carregar treinos: ${snapshot.error}',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: AppColors.textSecondary),
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton(
+                  onPressed: () {
+                    setState(() {});
+                  },
+                  child: const Text('Tentar Novamente'),
+                ),
+              ],
+            ),
+          );
+        }
+
+        final data = snapshot.data;
+        if (data == null || data['my_workouts'] == null) {
+          return _buildEmptyMyWorkouts();
+        }
+
+        final myWorkouts = (data['my_workouts'] as List)
+            .map((w) => WorkoutModel(
+                  id: w['id'],
+                  name: w['name'],
+                  description: w['description'],
+                  duration: w['estimated_duration'] ?? 30,
+                  exercises: w['exercise_count'] ?? 0,
+                  difficulty: _mapDifficulty(w['difficulty_level']),
+                  category: _mapCategory(w['workout_type']),
+                  calories: w['calories_estimate'] ?? 0,
+                  isRecommended: false,
+                ))
+            .toList();
+
+        if (myWorkouts.isEmpty) {
+          return _buildEmptyMyWorkouts();
+        }
+
+        return RefreshIndicator(
+          onRefresh: () async {
+            setState(() {});
+          },
+          color: AppColors.primary,
+          child: ListView.builder(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            itemCount: myWorkouts.length,
+            itemBuilder: (context, index) {
+              final workout = myWorkouts[index];
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: _MyWorkoutCard(
+                  workout: workout,
+                  onTap: () => _openWorkoutDetail(workout),
+                  onEdit: () => _editWorkout(workout),
+                  onDelete: () => _deleteWorkout(workout),
+                ),
+              );
+            },
           ),
         );
-      }
-
-      final data = snapshot.data;
-      if (data == null || data['my_workouts'] == null) {
-        return _buildEmptyMyWorkouts();
-      }
-
-      final myWorkouts = (data['my_workouts'] as List)
-          .map((w) => WorkoutModel(
-                id: w['id'],
-                name: w['name'],
-                description: w['description'],
-                duration: w['estimated_duration'] ?? 30,
-                exercises: w['exercise_count'] ?? 0,
-                difficulty: _mapDifficulty(w['difficulty_level']),
-                category: _mapCategory(w['workout_type']),
-                calories: w['calories_estimate'] ?? 0,
-                isRecommended: false,
-              ))
-          .toList();
-
-      if (myWorkouts.isEmpty) {
-        return _buildEmptyMyWorkouts();
-      }
-
-      return RefreshIndicator(
-        onRefresh: () async {
-          setState(() {});
-        },
-        color: AppColors.primary,
-        child: ListView.builder(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-          itemCount: myWorkouts.length,
-          itemBuilder: (context, index) {
-            final workout = myWorkouts[index];
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 16),
-              child: _MyWorkoutCard(
-                workout: workout,
-                onTap: () => _openWorkoutDetail(workout),
-                onEdit: () => _editWorkout(workout),
-                onDelete: () => _deleteWorkout(workout),
-              ),
-            );
-          },
-        ),
-      );
-    },
-  );
-}
+      },
+    );
+  }
 
   Widget _buildEmptyMyWorkouts() {
     return Center(
@@ -716,6 +721,7 @@ class _WorkoutsPageState extends State<WorkoutsPage> with TickerProviderStateMix
     }
   }
 
+  // ✅ ABA EXERCÍCIOS CORRIGIDA - SÓ VISUALIZAÇÃO
   Widget _buildExercisesTab() {
     if (_isLoadingExercises) {
       return const Center(
@@ -729,7 +735,7 @@ class _WorkoutsPageState extends State<WorkoutsPage> with TickerProviderStateMix
       return _buildEmptyState(
         icon: Icons.search_off,
         title: 'Nenhum exercício encontrado',
-        subtitle: 'Os exercícios do Django aparecerão aqui',
+        subtitle: 'Tente ajustar os filtros ou busca',
       );
     }
 
@@ -737,7 +743,7 @@ class _WorkoutsPageState extends State<WorkoutsPage> with TickerProviderStateMix
       onRefresh: _loadExercisesFromAPI,
       color: AppColors.primary,
       child: ListView.builder(
-        padding: const EdgeInsets.symmetric(horizontal: 20),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
         itemCount: exercises.length,
         itemBuilder: (context, index) {
           return Padding(
@@ -745,7 +751,6 @@ class _WorkoutsPageState extends State<WorkoutsPage> with TickerProviderStateMix
             child: _ExerciseListCard(
               exercise: exercises[index],
               onTap: () => _openExerciseDetail(exercises[index]),
-              onAddToWorkout: () => _showAddToWorkoutDialog(exercises[index]),
             ),
           );
         },
@@ -830,36 +835,20 @@ class _WorkoutsPageState extends State<WorkoutsPage> with TickerProviderStateMix
     );
   }
 
+  // ✅ MÉTODO CORRIGIDO - Abre exercício para visualização
   void _openExerciseDetail(ExerciseModel exercise) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Detalhes: ${exercise.name}'),
-        backgroundColor: AppColors.primary,
-      ),
-    );
-  }
-
-  void _showAddToWorkoutDialog(ExerciseModel exercise) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        title: const Text('Adicionar ao Treino'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(exercise.name),
-            const SizedBox(height: 16),
-            const Text('Funcionalidade em desenvolvimento'),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Fechar'),
-          ),
-        ],
-      ),
+    print('🎯 Abrindo exercício em PREVIEW MODE');
+    print('   Exercise: ${exercise.name}');
+    print('   isPreviewMode: true');
+    
+    AppRouter.goToExerciseExecution(
+      exercise: exercise,
+      totalExercises: 1,
+      currentExerciseIndex: 1,
+      allExercises: [exercise],
+      initialWorkoutSeconds: 0,
+      isFullWorkout: false,
+      isPreviewMode: true, // ✅ CRÍTICO: Ativa modo visualização
     );
   }
 }
@@ -1143,15 +1132,14 @@ class _MyWorkoutCard extends StatelessWidget {
   }
 }
 
+// ✅ WIDGET CORRIGIDO - Card de exercício sem botão de adicionar
 class _ExerciseListCard extends StatelessWidget {
   final ExerciseModel exercise;
   final VoidCallback onTap;
-  final VoidCallback onAddToWorkout;
 
   const _ExerciseListCard({
     required this.exercise,
     required this.onTap,
-    required this.onAddToWorkout,
   });
 
   @override
@@ -1167,6 +1155,22 @@ class _ExerciseListCard extends StatelessWidget {
         ),
         child: Row(
           children: [
+            // Ícone de grupo muscular
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(
+                Icons.fitness_center,
+                color: AppColors.primary,
+                size: 24,
+              ),
+            ),
+            
+            const SizedBox(width: 16),
+            
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1192,18 +1196,47 @@ class _ExerciseListCard extends StatelessWidget {
                   const SizedBox(height: 8),
                   Row(
                     children: [
+                      // Badge de grupo muscular
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color: AppColors.card,
+                          color: AppColors.primary.withValues(alpha: 0.2),
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Text(
                           exercise.muscleGroup,
                           style: const TextStyle(
                             fontSize: 10,
-                            color: AppColors.textSecondary,
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.w600,
                           ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      // Badge de equipamento
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppColors.card,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.settings,
+                              size: 10,
+                              color: AppColors.textSecondary,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              exercise.equipment,
+                              style: const TextStyle(
+                                fontSize: 10,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
@@ -1211,9 +1244,14 @@ class _ExerciseListCard extends StatelessWidget {
                 ],
               ),
             ),
-            IconButton(
-              onPressed: onAddToWorkout,
-              icon: const Icon(Icons.add_circle_outline, color: AppColors.primary),
+            
+            const SizedBox(width: 12),
+            
+            // Ícone de "ver mais"
+            const Icon(
+              Icons.chevron_right,
+              color: AppColors.textSecondary,
+              size: 24,
             ),
           ],
         ),

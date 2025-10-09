@@ -16,4 +16,7 @@ urlpatterns = [
     path('ai/generate-workout/', views.generate_ai_workout, name='ai_workout'),
     path('ai/analyze-progress/', views.analyze_progress_ai, name='ai_progress'),
     path('ai/motivational-message/', views.generate_motivational_message, name='ai_motivation'),
+
+    # NOVA ROTA PARA CHATBOT
+    path('generate-workout-from-chat/', views.generate_workout_from_conversation, name='generate_workout_from_chat'),
 ]

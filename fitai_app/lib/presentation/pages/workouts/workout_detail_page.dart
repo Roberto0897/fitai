@@ -28,78 +28,61 @@ class _WorkoutDetailPageState extends State<WorkoutDetailPage> {
     _loadWorkoutExercises();
   }
 
-  // Carrega os exercícios do treino específico
- Future<void> _loadWorkoutExercises() async {
-  setState(() {
-    _isLoadingExercises = true;
-    _errorMessage = null;
-  });
-
-  try {
-    print('🔍 Carregando detalhes do treino ID: ${widget.workout.id}');
-    print('📍 URL será: http://localhost:8000/api/v1/workouts/${widget.workout.id}/');
-    
-    // Busca os detalhes completos do treino incluindo exercícios
-    final response = await ApiService.getWorkoutDetail(widget.workout.id);
-    
-    print('Resposta completa da API: $response');
-    
-    // Verifica se existe o campo 'exercises' na resposta
-    final exercisesList = response['exercises'] as List? ?? [];
-    
-    print('Total de exercícios encontrados: ${exercisesList.length}');
-    
-     setState(() {
-      _workoutExercises = exercisesList.map((exerciseData) {
-        final exercise = exerciseData is Map && exerciseData.containsKey('exercise') 
-            ? exerciseData['exercise'] 
-            : exerciseData;
-        
-        // LOGS COMPLETOS
-        print('═══════════════════════════════════════');
-        print('TODOS OS CAMPOS DO EXERCISE:');
-        if (exercise is Map) {
-          exercise.forEach((key, value) {
-            print('  $key: $value');
-          });
-        }
-        print('');
-        print('video_url: ${exercise['video_url']}');
-        print('image_url: ${exercise['image_url']}');
-        print('primary_muscle_group: ${exercise['primary_muscle_group']}');
-        print('muscle_group: ${exercise['muscle_group']}');
-        print('═══════════════════════════════════════');
-        
-        return ExerciseModel(
-          id: exercise['id'] ?? 0,
-          name: exercise['name'] ?? 'Sem nome',
-          description: exercise['description'] ?? '',
-          muscleGroup: _mapMuscleGroup(exercise['muscle_group']),
-          difficulty: _mapDifficulty(exercise['difficulty_level']),
-          equipment: exercise['equipment_needed'] ?? 'Não especificado',
-          series: exerciseData['sets'] != null          
-              ? '${exerciseData['sets']} séries x ${exerciseData['reps'] ?? "?"} reps' 
-              : '3 séries',
-          reps: exerciseData['reps']?.toString(),        
-          restTime: exerciseData['rest_time']?.toString(), 
-          imageUrl:  exercise['video_url'] ?? exercise['image_url'], 
-        );
-      }).toList();
-      _isLoadingExercises = false;
-    });
-    
-    print('✅ ${_workoutExercises.length} exercícios carregados do treino ${widget.workout.id}');
-    
-  } catch (e, stackTrace) {
-    print('❌ Erro ao carregar exercícios do treino: $e');
-    print('Stack trace: $stackTrace');
-    
+  // ✅ Carrega os exercícios do treino específico
+  Future<void> _loadWorkoutExercises() async {
     setState(() {
-      _errorMessage = 'Erro ao carregar exercícios: ${e.toString()}';
-      _isLoadingExercises = false;
+      _isLoadingExercises = true;
+      _errorMessage = null;
     });
+
+    try {
+      print('🔍 Carregando detalhes do treino ID: ${widget.workout.id}');
+      
+      final response = await ApiService.getWorkoutDetail(widget.workout.id);
+      
+      print('Resposta da API: $response');
+      
+      final exercisesList = response['exercises'] as List? ?? [];
+      
+      print('Total de exercícios: ${exercisesList.length}');
+      
+      setState(() {
+        _workoutExercises = exercisesList.map((exerciseData) {
+          final exercise = exerciseData is Map && exerciseData.containsKey('exercise') 
+              ? exerciseData['exercise'] 
+              : exerciseData;
+          
+          return ExerciseModel(
+            id: exercise['id'] ?? 0,
+            name: exercise['name'] ?? 'Sem nome',
+            description: exercise['description'] ?? '',
+            muscleGroup: _mapMuscleGroup(exercise['muscle_group']),
+            difficulty: _mapDifficulty(exercise['difficulty_level']),
+            equipment: exercise['equipment_needed'] ?? 'Não especificado',
+            series: exerciseData['sets'] != null          
+                ? '${exerciseData['sets']} séries x ${exerciseData['reps'] ?? "?"} reps' 
+                : '3 séries',
+            reps: exerciseData['reps']?.toString(),        
+            restTime: exerciseData['rest_time']?.toString(), 
+            videoUrl: exercise['video_url'],
+            imageUrl: exercise['image_url'],
+          );
+        }).toList();
+        _isLoadingExercises = false;
+      });
+      
+      print('✅ ${_workoutExercises.length} exercícios carregados');
+      
+    } catch (e, stackTrace) {
+      print('❌ Erro ao carregar exercícios: $e');
+      print('Stack trace: $stackTrace');
+      
+      setState(() {
+        _errorMessage = 'Erro ao carregar exercícios: ${e.toString()}';
+        _isLoadingExercises = false;
+      });
+    }
   }
-}
 
   String _mapDifficulty(String? difficulty) {
     switch (difficulty?.toLowerCase()) {
@@ -161,7 +144,7 @@ class _WorkoutDetailPageState extends State<WorkoutDetailPage> {
           end: Alignment.bottomRight,
           colors: [
             AppColors.primary,
-            AppColors.primary.withValues(alpha: 0.7),
+            AppColors.primary.withOpacity(0.7),
           ],
         ),
       ),
@@ -178,7 +161,7 @@ class _WorkoutDetailPageState extends State<WorkoutDetailPage> {
                   child: Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.2),
+                      color: Colors.white.withOpacity(0.2),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: const Icon(
@@ -196,7 +179,7 @@ class _WorkoutDetailPageState extends State<WorkoutDetailPage> {
                       child: Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.2),
+                          color: Colors.white.withOpacity(0.2),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Icon(
@@ -211,7 +194,7 @@ class _WorkoutDetailPageState extends State<WorkoutDetailPage> {
                       child: Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.2),
+                          color: Colors.white.withOpacity(0.2),
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: const Icon(
@@ -242,7 +225,7 @@ class _WorkoutDetailPageState extends State<WorkoutDetailPage> {
               widget.workout.description,
               style: TextStyle(
                 fontSize: 14,
-                color: Colors.white.withValues(alpha: 0.9),
+                color: Colors.white.withOpacity(0.9),
               ),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
@@ -255,7 +238,7 @@ class _WorkoutDetailPageState extends State<WorkoutDetailPage> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.2),
+                    color: Colors.white.withOpacity(0.2),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
@@ -271,7 +254,7 @@ class _WorkoutDetailPageState extends State<WorkoutDetailPage> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.2),
+                    color: Colors.white.withOpacity(0.2),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
@@ -295,7 +278,7 @@ class _WorkoutDetailPageState extends State<WorkoutDetailPage> {
     if (_isLoadingExercises) {
       return const Center(
         child: CircularProgressIndicator(
-          color: Colors.white,
+          color: AppColors.primary,
         ),
       );
     }
@@ -310,7 +293,7 @@ class _WorkoutDetailPageState extends State<WorkoutDetailPage> {
               const Icon(
                 Icons.error_outline,
                 size: 64,
-                color: Colors.red,
+                color: AppColors.error,
               ),
               const SizedBox(height: 16),
               Text(
@@ -348,6 +331,7 @@ class _WorkoutDetailPageState extends State<WorkoutDetailPage> {
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
               ),
             ),
             const SizedBox(height: 8),
@@ -376,7 +360,7 @@ class _WorkoutDetailPageState extends State<WorkoutDetailPage> {
                 exercise: _workoutExercises[index],
                 exerciseNumber: index + 1,
                 totalExercises: _workoutExercises.length,
-                onTap: () => _openExerciseDetail(_workoutExercises[index], index),
+                onTap: () => _openExercisePreview(_workoutExercises[index], index),
               ),
             );
           },
@@ -392,7 +376,7 @@ class _WorkoutDetailPageState extends State<WorkoutDetailPage> {
         color: AppColors.surface,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.1),
+            color: Colors.black.withOpacity(0.1),
             blurRadius: 10,
             offset: const Offset(0, -5),
           ),
@@ -428,7 +412,7 @@ class _WorkoutDetailPageState extends State<WorkoutDetailPage> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
-                onPressed: _workoutExercises.isEmpty ? null : _startWorkout,
+                onPressed: _workoutExercises.isEmpty ? null : _startFullWorkout,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
                   foregroundColor: Colors.white,
@@ -436,7 +420,7 @@ class _WorkoutDetailPageState extends State<WorkoutDetailPage> {
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  disabledBackgroundColor: AppColors.primary.withValues(alpha: 0.3),
+                  disabledBackgroundColor: AppColors.primary.withOpacity(0.3),
                 ),
                 child: const Row(
                   mainAxisSize: MainAxisSize.min,
@@ -460,201 +444,531 @@ class _WorkoutDetailPageState extends State<WorkoutDetailPage> {
     );
   }
 
- Future<void> _startWorkout() async {
+  // ✅ MÉTODO CORRIGIDO: Iniciar treino completo
+Future<void> _startFullWorkout() async {
   if (_workoutExercises.isEmpty) {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('Adicione exercícios antes de iniciar o treino'),
-        backgroundColor: Colors.red,
+        backgroundColor: AppColors.error,
       ),
     );
     return;
   }
 
   try {
+    // Mostrar loading
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (context) => const Center(
-        child: CircularProgressIndicator(),
+        child: CircularProgressIndicator(color: AppColors.primary),
       ),
     );
 
-    print('Iniciando sessão de treino no backend...');
+    print('🏁 Iniciando sessão de treino...');
+    print('   Workout ID: ${widget.workout.id}');
     
+    // ✅ Tentar iniciar sessão (agora com verificação interna)
     final sessionResponse = await ApiService.startWorkoutSession(
       widget.workout.id,
     );
     
-    print('Sessão criada com sucesso!');
-    print('   Session ID: ${sessionResponse['session_id']}');
+    final sessionId = sessionResponse['session_id'];
+    print('✅ Sessão criada com sucesso! ID: $sessionId');
 
+    // Fechar loading
     if (mounted) Navigator.pop(context);
 
-    AppRouter.goToExerciseExecution(
-      exercise: _workoutExercises[0],
-      totalExercises: _workoutExercises.length,
-      currentExerciseIndex: 1,
-      allExercises: _workoutExercises,
-      initialWorkoutSeconds: 0,
-      isFullWorkout: true,
-      sessionId: sessionResponse['session_id'],
-      workoutId: widget.workout.id,
-    );
+    // Navegar para primeiro exercício
+    if (mounted) {
+      AppRouter.goToExerciseExecution(
+        exercise: _workoutExercises[0],
+        totalExercises: _workoutExercises.length,
+        currentExerciseIndex: 1,
+        allExercises: _workoutExercises,
+        initialWorkoutSeconds: 0,
+        isFullWorkout: true,
+        sessionId: sessionId,
+        workoutId: widget.workout.id,
+      );
+    }
 
+  } on ActiveSessionException catch (e) {
+    // ✅ Tratamento específico para sessão ativa
+    if (mounted) Navigator.pop(context); // Fechar loading
+    
+    print('⚠️ Sessão ativa detectada:');
+    print('   Session ID: ${e.sessionId}');
+    print('   Workout: ${e.workoutName}');
+    
+    if (mounted) {
+      _showActiveSessionDialog(
+        sessionId: e.sessionId,
+        workoutName: e.workoutName,
+        startedAt: e.startedAt,
+        workoutId: e.workoutId,
+      );
+    }
+    
   } catch (e) {
+    // Fechar loading
     if (mounted) Navigator.pop(context);
     
-    print('Erro ao iniciar sessão: $e');
+    print('❌ Erro ao iniciar sessão: $e');
     
-    // Verifica se é erro de sessão ativa
-    if (e.toString().contains('já tem uma sessão em andamento')) {
-      _handleActiveSession(e);
-    } else {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Erro ao iniciar treino: $e'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 4),
-          ),
-        );
-      }
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erro ao iniciar treino: ${e.toString()}'),
+          backgroundColor: AppColors.error,
+          duration: const Duration(seconds: 4),
+        ),
+      );
     }
   }
 }
 
-Future<void> _handleActiveSession(dynamic error) async {
-  // Tenta extrair info da sessão ativa do erro
-  final activeSession = await ApiService.getActiveSession();
-  
-  if (!mounted) return;
-  
+// ✅ MÉTODO NOVO: Mostrar dialog de sessão ativa
+void _showActiveSessionDialog({
+  required int sessionId,
+  required String workoutName,
+  String? startedAt,
+  int? workoutId,
+}) {
   showDialog(
     context: context,
+    barrierDismissible: false,
     builder: (context) => AlertDialog(
       backgroundColor: AppColors.surface,
-      title: Row(
+      title: const Row(
         children: [
-          const Icon(Icons.warning_amber, color: Colors.orange),
-          const SizedBox(width: 12),
-          const Text('Treino em Andamento', style: TextStyle(color: Colors.white)),
+          Icon(Icons.warning_amber, color: Colors.orange, size: 28),
+          SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Treino em Andamento',
+              style: TextStyle(color: Colors.white, fontSize: 18),
+            ),
+          ),
         ],
       ),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (activeSession != null) ...[
-            Text(
-              'Você tem um treino ativo:',
-              style: const TextStyle(color: AppColors.textSecondary),
+          const Text(
+            'Você tem um treino ativo:',
+            style: TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 14,
             ),
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.primary.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(8),
+          ),
+          const SizedBox(height: 16),
+          
+          // Card com info da sessão
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: AppColors.primary.withOpacity(0.3),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    activeSession['active_workout'] ?? 'Treino Ativo',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.fitness_center,
+                      color: AppColors.primary,
+                      size: 20,
                     ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        workoutName,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'ID da Sessão: $sessionId',
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 12,
                   ),
+                ),
+                if (startedAt != null) ...[
                   const SizedBox(height: 4),
                   Text(
-                    'ID da Sessão: ${activeSession['active_session_id']}',
+                    'Iniciado: ${_formatDateTime(startedAt)}',
                     style: const TextStyle(
                       color: AppColors.textSecondary,
                       fontSize: 12,
                     ),
                   ),
                 ],
-              ),
+              ],
             ),
-            const SizedBox(height: 16),
-          ],
+          ),
+          
+          const SizedBox(height: 16),
+          
           const Text(
-            'Escolha uma ação:',
+            'O que deseja fazer?',
             style: TextStyle(
               color: Colors.white,
+              fontSize: 14,
               fontWeight: FontWeight.w600,
             ),
           ),
         ],
       ),
       actions: [
+        // Botão: Voltar
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Voltar'),
+          child: const Text(
+            'Voltar',
+            style: TextStyle(color: AppColors.textSecondary),
+          ),
         ),
+        
+        // Botão: Cancelar e Iniciar Novo
         TextButton(
           onPressed: () async {
-            Navigator.pop(context);
-            if (activeSession != null) {
-              await _cancelAndStartNew(activeSession['active_session_id']);
-            }
+            Navigator.pop(context); // Fecha dialog
+            await _cancelAndStartNew(sessionId);
           },
           child: const Text(
-            'Cancelar Anterior e Iniciar',
+            'Cancelar e Iniciar Novo',
             style: TextStyle(color: AppColors.error),
           ),
         ),
+        
+        // Botão: Continuar Sessão (se for o mesmo workout)
+        if (workoutId != null && workoutId == widget.workout.id)
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              
+              // Navegar para primeiro exercício com sessão existente
+              if (_workoutExercises.isNotEmpty) {
+                AppRouter.goToExerciseExecution(
+                  exercise: _workoutExercises[0],
+                  totalExercises: _workoutExercises.length,
+                  currentExerciseIndex: 1,
+                  allExercises: _workoutExercises,
+                  initialWorkoutSeconds: 0,
+                  isFullWorkout: true,
+                  sessionId: sessionId,
+                  workoutId: widget.workout.id,
+                );
+              }
+            },
+            child: const Text(
+              'Continuar',
+              style: TextStyle(
+                color: AppColors.primary,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
       ],
     ),
   );
 }
+  // ✅ MÉTODO NOVO: Lidar com erro de sessão ativa
+  Future<void> _handleActiveSessionError() async {
+    try {
+      print('🔍 Buscando informações da sessão ativa...');
+      
+      final activeSession = await ApiService.getActiveSession();
+      
+      if (activeSession == null) {
+        print('⚠️ Nenhuma sessão ativa encontrada (inconsistência)');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Erro: Sessão ativa não encontrada'),
+              backgroundColor: AppColors.error,
+            ),
+          );
+        }
+        return;
+      }
 
+      final sessionId = activeSession['active_session_id'];
+      final workoutName = activeSession['active_workout'];
+      final startedAt = activeSession['started_at'];
+      
+      print('📋 Sessão ativa:');
+      print('   ID: $sessionId');
+      print('   Treino: $workoutName');
+      print('   Iniciado: $startedAt');
+
+      if (!mounted) return;
+
+      // Mostrar dialog com opções
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => AlertDialog(
+          backgroundColor: AppColors.surface,
+          title: const Row(
+            children: [
+              Icon(Icons.warning_amber, color: Colors.orange, size: 28),
+              SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Treino em Andamento',
+                  style: TextStyle(color: Colors.white, fontSize: 18),
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Você tem um treino ativo:',
+                style: TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 16),
+              
+              // Card com info da sessão
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: AppColors.primary.withOpacity(0.3),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.fitness_center,
+                          color: AppColors.primary,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            workoutName ?? 'Treino desconhecido',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'ID da Sessão: $sessionId',
+                      style: const TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                    if (startedAt != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'Iniciado: ${_formatDateTime(startedAt)}',
+                        style: const TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              
+              const SizedBox(height: 16),
+              
+              const Text(
+                'Escolha uma ação:',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            // Botão: Voltar
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text(
+                'Voltar',
+                style: TextStyle(color: AppColors.textSecondary),
+              ),
+            ),
+            
+            // Botão: Cancelar e Iniciar Novo
+            TextButton(
+              onPressed: () async {
+                Navigator.pop(context); // Fecha dialog
+                await _cancelAndStartNew(sessionId);
+              },
+              child: const Text(
+                'Cancelar e Iniciar Novo',
+                style: TextStyle(color: AppColors.error),
+              ),
+            ),
+            
+            // Botão: Continuar Sessão
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context); // Fecha dialog
+                
+                // Navegar para primeiro exercício com sessão existente
+                if (_workoutExercises.isNotEmpty) {
+                  AppRouter.goToExerciseExecution(
+                    exercise: _workoutExercises[0],
+                    totalExercises: _workoutExercises.length,
+                    currentExerciseIndex: 1,
+                    allExercises: _workoutExercises,
+                    initialWorkoutSeconds: 0,
+                    isFullWorkout: true,
+                    sessionId: sessionId,
+                    workoutId: widget.workout.id,
+                  );
+                }
+              },
+              child: const Text(
+                'Continuar',
+                style: TextStyle(color: AppColors.primary),
+              ),
+            ),
+          ],
+        ),
+      );
+
+    } catch (e) {
+      print('❌ Erro ao buscar sessão ativa: $e');
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erro ao verificar sessão ativa: $e'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
+  // ✅ MÉTODO CORRIGIDO: Cancelar sessão anterior e iniciar nova
 Future<void> _cancelAndStartNew(int sessionId) async {
   try {
+    // Mostrar loading
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (context) => const Center(
-        child: CircularProgressIndicator(),
+        child: CircularProgressIndicator(color: AppColors.primary),
       ),
     );
 
-    print('Cancelando sessão $sessionId...');
+    print('🗑️ Cancelando sessão $sessionId...');
     await ApiService.cancelActiveSession(sessionId);
     
-    print('Sessão cancelada. Iniciando nova...');
+    print('✅ Sessão cancelada com sucesso');
     
+    // Fechar loading
     if (mounted) Navigator.pop(context);
     
-    // Tenta iniciar novamente
-    await _startWorkout();
+    print('🔄 Aguardando 1 segundo antes de iniciar nova sessão...');
+    await Future.delayed(const Duration(seconds: 1));
+    
+    // Tentar iniciar novamente
+    print('🔄 Tentando iniciar nova sessão...');
+    await _startFullWorkout();
     
   } catch (e) {
+    // Fechar loading
     if (mounted) Navigator.pop(context);
     
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Erro ao cancelar sessão: $e'),
-        backgroundColor: Colors.red,
-      ),
-    );
+    print('❌ Erro ao cancelar sessão: $e');
+    
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erro ao cancelar sessão: $e'),
+          backgroundColor: AppColors.error,
+          action: SnackBarAction(
+            label: 'Tentar Novamente',
+            textColor: Colors.white,
+            onPressed: () => _cancelAndStartNew(sessionId),
+          ),
+        ),
+      );
+    }
   }
 }
 
-  void _openExerciseDetail(ExerciseModel exercise, int index) {
-    // Mostra aviso de que deve iniciar pelo botão
+  // ✅ MÉTODO AUXILIAR: Formatar data/hora
+String _formatDateTime(String isoString) {
+  try {
+    final dateTime = DateTime.parse(isoString);
+    final now = DateTime.now();
+    final diff = now.difference(dateTime);
+    
+    if (diff.inMinutes < 60) {
+      return '${diff.inMinutes} min atrás';
+    } else if (diff.inHours < 24) {
+      return '${diff.inHours}h atrás';
+    } else {
+      return '${diff.inDays} dias atrás';
+    }
+  } catch (e) {
+    return isoString;
+  }
+}
+
+  // ✅ MÉTODO CORRIGIDO: Visualizar exercício (preview)
+  void _openExercisePreview(ExerciseModel exercise, int index) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: AppColors.surface,
-        title: const Text(
-          'Dica',
-          style: TextStyle(color: Colors.white),
+        title: const Row(
+          children: [
+            Icon(Icons.info_outline, color: AppColors.primary),
+            SizedBox(width: 12),
+            Text(
+              'Visualização',
+              style: TextStyle(color: Colors.white),
+            ),
+          ],
         ),
         content: const Text(
-          'Para iniciar o treino completo com cronômetro, use o botão "Iniciar Treino" abaixo.\n\nDeseja visualizar este exercício mesmo assim?',
+          'Esta é apenas uma visualização do exercício.\n\n'
+          'Para iniciar o treino completo com cronômetro e registro de séries, '
+          'use o botão "Iniciar Treino" abaixo.\n\n'
+          'Deseja visualizar este exercício mesmo assim?',
           style: TextStyle(color: AppColors.textSecondary),
         ),
         actions: [
@@ -665,13 +979,16 @@ Future<void> _cancelAndStartNew(int sessionId) async {
           TextButton(
             onPressed: () {
               Navigator.pop(context);
-              // Abre apenas para visualização, sem fluxo de treino
+              
+              // ✅ Navegar em modo PREVIEW
               AppRouter.goToExerciseExecution(
                 exercise: exercise,
                 totalExercises: _workoutExercises.length,
                 currentExerciseIndex: index + 1,
                 allExercises: _workoutExercises,
                 initialWorkoutSeconds: 0,
+                isFullWorkout: false,  // ✅ NÃO é treino completo
+                isPreviewMode: true,   // ✅ É modo visualização
               );
             },
             child: const Text('Visualizar'),
@@ -681,6 +998,10 @@ Future<void> _cancelAndStartNew(int sessionId) async {
     );
   }
 }
+
+// ============================================================
+// WIDGETS AUXILIARES
+// ============================================================
 
 class _ExerciseCard extends StatelessWidget {
   final ExerciseModel exercise;
@@ -705,7 +1026,7 @@ class _ExerciseCard extends StatelessWidget {
           color: AppColors.surface,
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: AppColors.primary.withValues(alpha: 0.2),
+            color: AppColors.primary.withOpacity(0.2),
           ),
         ),
         child: Row(
@@ -714,7 +1035,7 @@ class _ExerciseCard extends StatelessWidget {
               width: 60,
               height: 60,
               decoration: BoxDecoration(
-                color: AppColors.primary.withValues(alpha: 0.1),
+                color: AppColors.primary.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Center(
@@ -740,6 +1061,7 @@ class _ExerciseCard extends StatelessWidget {
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary,
                     ),
                   ),
                   const SizedBox(height: 4),
@@ -800,6 +1122,7 @@ class _StatItem extends StatelessWidget {
               style: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
+                color: AppColors.textPrimary,
               ),
             ),
             const SizedBox(width: 2),
@@ -816,6 +1139,10 @@ class _StatItem extends StatelessWidget {
     );
   }
 }
+
+// ============================================================
+// MODEL
+// ============================================================
 
 class ExerciseModel {
   final int id;

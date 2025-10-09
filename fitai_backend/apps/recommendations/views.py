@@ -788,7 +788,218 @@ def generate_motivational_message(request):
             'fallback_message': 'Você tem o poder de transformar sua vida através do movimento. Continue!'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
+# endpoint geracao de exercicios chatbot
 
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@rate_limit_user(max_requests_per_hour=5)  # Limite baixo
+def generate_workout_from_conversation(request):
+    """
+    🤖 Gera plano de treino SEMANAL baseado na conversa do chatbot
+    
+    Este endpoint é específico para o chatbot e NÃO afeta o onboarding.
+    """
+    try:
+        from apps.exercises.models import Exercise
+        from apps.workouts.models import Workout, WorkoutExercise
+        from django.utils import timezone
+        
+        profile = UserProfile.objects.get(user=request.user)
+        
+        # Parâmetros da requisição (podem vir da conversa)
+        conversation_id = request.data.get('conversation_id')
+        user_preferences = request.data.get('user_preferences', {})
+        
+        # Configurações padrão baseadas no perfil
+        days_per_week = user_preferences.get('days_per_week', 5)
+        focus = user_preferences.get('focus', 'full_body')
+        difficulty = profile.activity_level or 'beginner'
+        
+        # Mapear atividade para dificuldade
+        difficulty_mapping = {
+            'sedentary': 'beginner',
+            'light': 'beginner',
+            'moderate': 'intermediate',
+            'active': 'intermediate',
+            'very_active': 'advanced'
+        }
+        difficulty = difficulty_mapping.get(difficulty, 'beginner')
+        
+        print(f'🤖 Gerando plano SEMANAL para {request.user.email}')
+        print(f'   Dias: {days_per_week}, Foco: {focus}, Nível: {difficulty}')
+        
+        # Buscar exercícios disponíveis
+        exercises_query = Exercise.objects.all()
+        
+        # Filtrar por foco
+        focus_mapping = {
+            'upper': ['chest', 'back', 'shoulders', 'arms'],
+            'lower': ['legs', 'glutes'],
+            'cardio': ['cardio'],
+            'full_body': None,  # Todos
+        }
+        
+        if focus in focus_mapping and focus_mapping[focus]:
+            exercises_query = exercises_query.filter(muscle_group__in=focus_mapping[focus])
+        
+        # Filtrar por dificuldade
+        if difficulty == 'beginner':
+            exercises_query = exercises_query.filter(difficulty_level='beginner')
+        elif difficulty == 'intermediate':
+            exercises_query = exercises_query.filter(difficulty_level__in=['beginner', 'intermediate'])
+        
+        all_exercises = list(exercises_query[:50])
+        
+        if not all_exercises:
+            return Response({
+                'error': 'Não há exercícios disponíveis',
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # ============================================================
+        # 🔥 ESTRUTURAR PLANO SEMANAL
+        # ============================================================
+        
+        # Definir grupos musculares por dia (exemplo para full_body)
+        weekly_structure = {
+            'Dia 1': {
+                'description': 'Peito e Tríceps',
+                'muscle_groups': ['chest', 'arms'],
+                'exercises_count': 5
+            },
+            'Dia 2': {
+                'description': 'Costas e Bíceps',
+                'muscle_groups': ['back', 'arms'],
+                'exercises_count': 5
+            },
+            'Dia 3': {
+                'description': 'Pernas (ênfase em quadríceps)',
+                'muscle_groups': ['legs'],
+                'exercises_count': 5
+            },
+            'Dia 4': {
+                'description': 'Descanso Ativo (cardio leve, alongamento)',
+                'muscle_groups': ['cardio', 'flexibility'],
+                'exercises_count': 3
+            },
+            'Dia 5': {
+                'description': 'Ombros e Trapézio',
+                'muscle_groups': ['shoulders', 'back'],
+                'exercises_count': 5
+            },
+            'Dia 6': {
+                'description': 'Pernas (ênfase em posteriores e glúteos)',
+                'muscle_groups': ['legs', 'glutes'],
+                'exercises_count': 5
+            },
+            'Dia 7': {
+                'description': 'Descanso',
+                'muscle_groups': [],
+                'exercises_count': 0
+            },
+        }
+        
+        # Selecionar apenas dias necessários
+        days_to_generate = list(weekly_structure.keys())[:days_per_week]
+        
+        # ============================================================
+        # GERAR WORKOUT_PLAN COM CAMPO 'day'
+        # ============================================================
+        
+        workout_plan = []
+        order_counter = 1
+        
+        for day_name in days_to_generate:
+            day_info = weekly_structure[day_name]
+            
+            if day_info['exercises_count'] == 0:
+                continue  # Pular dia de descanso
+            
+            # Filtrar exercícios do dia
+            day_exercises = [
+                ex for ex in all_exercises 
+                if ex.muscle_group in day_info['muscle_groups']
+            ][:day_info['exercises_count']]
+            
+            # Se não encontrou exercícios específicos, usar gerais
+            if not day_exercises:
+                day_exercises = all_exercises[:day_info['exercises_count']]
+            
+            # Adicionar exercícios ao plano
+            for i, exercise in enumerate(day_exercises, 1):
+                # Configurar sets/reps baseado no objetivo
+                if profile.goal == 'lose_weight':
+                    sets, reps, rest = (3, "45-60 seg", 30)
+                elif profile.goal == 'gain_muscle':
+                    sets, reps, rest = (4, "8-12", 90)
+                else:
+                    sets, reps, rest = (3, "12-15", 60)
+                
+                workout_plan.append({
+                    'day': day_name,  # 🔥 CAMPO CRÍTICO!
+                    'day_description': day_info['description'],
+                    'order': order_counter,
+                    'exercise': {
+                        'id': exercise.id,
+                        'name': exercise.name,
+                        'description': exercise.description or '',
+                        'muscle_group': exercise.muscle_group,
+                        'difficulty_level': exercise.difficulty_level,
+                        'equipment_needed': exercise.equipment_needed or 'bodyweight',
+                        'duration_minutes': exercise.duration_minutes or 5,
+                        'instructions': exercise.instructions or [],
+                    },
+                    'sets': sets,
+                    'reps': reps,
+                    'rest_time_seconds': rest,
+                })
+                order_counter += 1
+        
+        # ============================================================
+        # RESPOSTA NO FORMATO ESPERADO PELO FLUTTER
+        # ============================================================
+        
+        response_data = {
+            'ai_generated_workout': {
+                'plan_info': {
+                    'total_exercises': len(workout_plan),
+                    'estimated_duration': days_per_week * 45,  # ~45min por dia
+                    'focus': focus,
+                    'difficulty': difficulty,
+                    'days_per_week': days_per_week,
+                    'personalized_for': profile.user.username or profile.user.email,
+                },
+                'workout_plan': workout_plan,  # 🔥 COM CAMPO 'day'!
+                'ai_recommendations': {
+                    'warm_up': 'Faça 5-10 minutos de aquecimento antes de cada treino',
+                    'cool_down': 'Finalize com 5-10 minutos de alongamento',
+                    'hydration': 'Beba água durante o treino',
+                    'progression': 'Aumente a carga gradualmente',
+                },
+                'customization_note': f'Plano semanal personalizado para {profile.goal or "fitness geral"}',
+            },
+        }
+        
+        print(f'✅ Plano semanal gerado: {len(workout_plan)} exercícios em {days_per_week} dias')
+        print(f'   Dias únicos: {set([ex["day"] for ex in workout_plan])}')
+        
+        return Response(response_data, status=status.HTTP_201_CREATED)
+        
+    except UserProfile.DoesNotExist:
+        return Response({
+            'error': 'Perfil não encontrado',
+            'message': 'Complete seu perfil antes de gerar treinos'
+        }, status=status.HTTP_404_NOT_FOUND)
+        
+    except Exception as e:
+        print(f'❌ Erro ao gerar workout do chat: {e}')
+        import traceback
+        traceback.print_exc()
+        
+        return Response({
+            'error': 'Erro ao gerar plano de treino',
+            'details': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 # FUNÇÕES AUXILIARES
 
 def generate_rule_based_workout(duration, focus, difficulty, profile):
@@ -1103,3 +1314,4 @@ def _generate_specific_recs(workout_count, profile):
         recs.append("Aumente gradualmente duração e intensidade dos treinos")
     
     return recs
+

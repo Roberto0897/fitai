@@ -604,49 +604,6 @@ class _DashboardPageState extends State<DashboardPage> {
           ),
         ),
         const SizedBox(height: 10),
-        
-        // 🔥 BOTÃO 2: MODIFICAR TREINO ATUAL (COM VALIDAÇÃO)
-        Consumer<DashboardProvider>(
-          builder: (context, dashProvider, child) {
-            final hasWorkout = dashProvider.hasRecommendedWorkout;
-            final workoutId = dashProvider.getRecommendedWorkoutId();
-            
-            return SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: hasWorkout ? () {
-                  // 🔥 PASSAR CONTEXTO E ID DO TREINO
-                  AppRouter.goToChatBot(
-                    initialContext: 'workout_modification',
-                    workoutId: workoutId,
-                    initialMessage: 'Quero modificar meu treino atual. Pode me ajudar?',
-                  );
-                } : null, // Desabilita se não tiver treino
-                icon: const Icon(Icons.edit_outlined, size: 20),
-                label: Text(
-                  'Modificar treino atual',
-                  style: GoogleFonts.jockeyOne(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: hasWorkout ? Colors.white : Colors.white30,
-                  side: BorderSide(
-                    color: hasWorkout 
-                        ? const Color(0xFF404040)
-                        : Colors.white.withOpacity(0.1),
-                    width: 1.5,
-                  ),
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-              ),
-            );
-          },
-        ),
       ],
     ),
   );

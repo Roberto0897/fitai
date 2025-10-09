@@ -23,7 +23,11 @@ def test_workouts_api(request):
 @permission_classes([IsAuthenticated])
 def list_workouts(request):
     """Lista todos os treinos disponíveis"""
-    workouts = Workout.objects.all()
+   # workouts = Workout.objects.all()
+   # SÓ TREINOS PÚBLICOS (catálogo)
+    workouts = Workout.objects.filter(
+        is_personalized=False  # Exclui TODOS os treinos personalizados
+    )
     data = []
     
     for workout in workouts:
@@ -56,7 +60,9 @@ def recommended_workouts(request):
         profile = UserProfile.objects.get(user=request.user)
         
         # Filtros baseados no perfil
-        filters = Q(is_recommended=True)
+        #filters = Q(is_recommended=True)
+        #  SÓ meus treinos IA
+        filters = Q(is_recommended=True) & Q(created_by_user=request.user)#alteracao 08/10
         
         # Filtrar por nível de atividade
         if profile.activity_level:
@@ -81,6 +87,7 @@ def recommended_workouts(request):
                 'workout_type': workout.workout_type,
                 'calories_estimate': workout.calories_estimate,
                 'exercise_count': exercise_count,
+                'is_ai_generated': True, #alteracao 08/10
                 'recommendation_reason': f"Recomendado para {profile.activity_level or 'seu nível'}"
             })
         
@@ -480,10 +487,24 @@ def pause_session(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-def complete_workout_session(request):
+def complete_workout_session(request, session_id=None):
     """Finaliza completamente uma sessão de treino"""
     try:
-        session = WorkoutSession.objects.get(user=request.user, completed=False)
+        # Se session_id foi passado na URL, usar esse
+        # Senão, buscar a sessão ativa do usuário
+        if session_id:
+            session = WorkoutSession.objects.get(
+                id=session_id,
+                user=request.user,
+                completed=False
+            )
+            print(f'✅ Usando session_id da URL: {session_id}')
+        else:
+            session = WorkoutSession.objects.get(
+                user=request.user,
+                completed=False
+            )
+            print(f'✅ Usando session ativa do usuário')
         
         # Dados opcionais fornecidos pelo usuário
         user_rating = request.data.get('user_rating')
@@ -508,6 +529,14 @@ def complete_workout_session(request):
             
         session.save()
         
+        print(f'✅ Sessão {session.id} finalizada com sucesso!')
+        print(f'   Duration: {session.duration_minutes}min')
+        
+        # Estatísticas da sessão
+        total_exercises = ExerciseLog.objects.filter(session=session).count()
+        completed_exercises = ExerciseLog.objects.filter(session=session, completed=True, skipped=False).count()
+        skipped_exercises = ExerciseLog.objects.filter(session=session, skipped=True).count()
+        
         # Atualizar progresso do usuário
         from apps.users.models import UserProgress
         try:
@@ -516,11 +545,6 @@ def complete_workout_session(request):
             progress.save()
         except UserProgress.DoesNotExist:
             UserProgress.objects.create(user=request.user, total_workouts=1)
-        
-        # Estatísticas da sessão
-        total_exercises = ExerciseLog.objects.filter(session=session).count()
-        completed_exercises = ExerciseLog.objects.filter(session=session, completed=True, skipped=False).count()
-        skipped_exercises = ExerciseLog.objects.filter(session=session, skipped=True).count()
         
         return Response({
             "message": "Treino finalizado com sucesso! Parabéns! 🎉",
@@ -545,33 +569,47 @@ def complete_workout_session(request):
         }, status=status.HTTP_200_OK)
         
     except WorkoutSession.DoesNotExist:
-        return Response({"error": "Nenhuma sessão ativa encontrada"}, 
+        return Response({"error": "Nenhuma sessão encontrada"}, 
                        status=status.HTTP_404_NOT_FOUND)
 
-@api_view(['DELETE'])
+@api_view(['POST'])  # ✅ Aceita DELETE e POST
 @permission_classes([IsAuthenticated])
-def cancel_session(request):
-    """Cancela a sessão atual"""
+def cancel_active_session(request, session_id):
+    """Cancela uma sessão ativa específica"""
     try:
-        session = WorkoutSession.objects.get(user=request.user, completed=False)
+        session = WorkoutSession.objects.get(
+            id=session_id,
+            user=request.user,
+            completed=False
+        )
         
-        session_info = {
-            "workout_name": session.workout.name,
-            "started_at": session.started_at
-        }
+        # Marcar como cancelada (não deletar para manter histórico)
+        session.completed = True
+        session.completed_at = timezone.now()
         
-        # Deletar logs da sessão e a sessão
-        ExerciseLog.objects.filter(session=session).delete()
-        session.delete()
+        # Adicionar nota de cancelamento
+        cancel_note = f"Sessão cancelada pelo usuário em {timezone.now().strftime('%d/%m/%Y às %H:%M')}"
+        if session.notes:
+            session.notes += f"\n{cancel_note}"
+        else:
+            session.notes = cancel_note
+        
+        session.save()
+        
+        print(f'✅ Sessão {session_id} cancelada com sucesso')
         
         return Response({
-            "message": "Sessão cancelada",
-            "cancelled_session": session_info
+            'message': 'Sessão cancelada com sucesso',
+            'session_id': session_id,
+            'workout_name': session.workout.name
         })
         
     except WorkoutSession.DoesNotExist:
-        return Response({"error": "Nenhuma sessão ativa encontrada"}, 
-                       status=status.HTTP_404_NOT_FOUND)
+        print(f'❌ Sessão {session_id} não encontrada')
+        return Response(
+            {'error': 'Sessão não encontrada ou não pertence a você'},
+            status=status.HTTP_404_NOT_FOUND
+        )
 
 
 @api_view(['GET'])

@@ -22,8 +22,10 @@ urlpatterns = [
     path('exercises/<int:exercise_log_id>/skip/', views.skip_exercise, name='skip_exercise'),
     path('sessions/pause/', views.pause_session, name='pause_session'),
     path('sessions/complete/', views.complete_workout_session, name='complete_workout_session'),
-    path('sessions/cancel/', views.cancel_session, name='cancel_session'),
+    path('sessions/cancel/', views.cancel_active_session, name='cancel_session'),
     
+    path('workouts/sessions/<int:session_id>/complete/', views.complete_workout_session, name='complete_workout_session_with_id'),
+
     # APIs finais de IA e Analytics (NOVAS)
     path('analytics/', views.user_analytics, name='user_analytics'),
     path('ai/exercise-recommendations/', views.ai_exercise_recommendations, name='ai_exercise_recommendations'),

@@ -145,6 +145,11 @@ class AppRouter {
           totalExercises: params['totalExercises'] as int,
           currentExerciseIndex: params['currentExerciseIndex'] as int,
           allExercises: params['allExercises'] as List<ExerciseModel>, // ADICIONE
+          initialWorkoutSeconds: (params['initialWorkoutSeconds'] as int?) ?? 0,
+          isFullWorkout: (params['isFullWorkout'] as bool?) ?? false,  // ✅ ADICIONADO
+          sessionId: params['sessionId'] as int?,                       // ✅ ADICIONADO
+          workoutId: params['workoutId'] as int?,                       // ✅ ADICIONADO
+          isPreviewMode: (params['isPreviewMode'] as bool?) ?? false,   // ✅ ADICIONADO
         );
       },
     ),
@@ -168,7 +173,7 @@ class AppRouter {
           final extra = state.extra as Map<String, dynamic>?;
           
           return ChatBotPage(
-            initialContext: extra?['context'] as String?,
+            initialContext: extra?['initialContext'] as String?,
             workoutId: extra?['workoutId'] as int?,
             initialMessage: extra?['initialMessage'] as String?,
           );
@@ -294,6 +299,7 @@ class AppRouter {
     bool isFullWorkout = false, // NOVO PARÂMETRO
     int? sessionId,        //  NOVO
     int? workoutId, 
+    bool isPreviewMode = false, // 🆕 NOVO
   }) {
     try {
       _router.push(
@@ -307,6 +313,7 @@ class AppRouter {
           'isFullWorkout': isFullWorkout, // NOVO
           'sessionId': sessionId,        //  NOVO
           'workoutId': workoutId,
+          'isPreviewMode': isPreviewMode,
         },
       );
       debugPrint('✅ Navegação para Exercise Execution realizada (isFullWorkout: $isFullWorkout)');
@@ -332,7 +339,7 @@ static void goToReports() {
       _router.push(
         AppRoutes.chatbot,
         extra: {
-          'context': initialContext,
+          'initialContext': initialContext,
           'workoutId': workoutId,
           'initialMessage': initialMessage,
         },

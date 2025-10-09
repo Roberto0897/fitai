@@ -2,7 +2,8 @@ import 'package:flutter/foundation.dart';
 import '../models/chat_models.dart';
 import 'api_service.dart';
 
-/// Serviço de gerenciamento do Chatbot COM geração de treino
+
+/// Serviço de gerenciamento do Chatbot COM geração automática de treino
 class ChatService extends ChangeNotifier {
   // Estado
   ChatConversation? _currentConversation;
@@ -11,7 +12,7 @@ class ChatService extends ChangeNotifier {
   bool _isSending = false;
   String? _error;
   
-  // 🔥 NOVO: Estado para geração de treino
+  // 🔥 Estado para geração de treino
   bool _isGeneratingWorkout = false;
   Map<String, dynamic>? _lastGeneratedWorkout;
 
@@ -22,8 +23,8 @@ class ChatService extends ChangeNotifier {
   bool get isSending => _isSending;
   String? get error => _error;
   bool get hasActiveConversation => _currentConversation != null;
-  bool get isGeneratingWorkout => _isGeneratingWorkout; // 🔥 NOVO
-  Map<String, dynamic>? get lastGeneratedWorkout => _lastGeneratedWorkout; // 🔥 NOVO
+  bool get isGeneratingWorkout => _isGeneratingWorkout;
+  Map<String, dynamic>? get lastGeneratedWorkout => _lastGeneratedWorkout;
 
   // ============================================================
   // INICIAR CONVERSA
@@ -82,209 +83,449 @@ class ChatService extends ChangeNotifier {
   }
 
   // ============================================================
-  // ENVIAR MENSAGEM
+  // ENVIAR MENSAGEM COM DETECÇÃO DE AÇÃO
   // ============================================================
 
   Future<bool> sendMessage(String text) async {
-    if (_currentConversation == null) {
-      debugPrint('⚠️ Nenhuma conversa ativa');
-      return false;
-    }
-
-    if (text.trim().isEmpty) {
-      debugPrint('⚠️ Mensagem vazia');
-      return false;
-    }
-
-    try {
-      _isSending = true;
-      _error = null;
-
-      // Adicionar mensagem do usuário imediatamente (otimista)
-      final userMessage = ChatMessage(
-        text: text,
-        isUser: true,
-        timestamp: DateTime.now(),
-      );
-      _messages.add(userMessage);
-      notifyListeners();
-
-      debugPrint('📤 Enviando mensagem: ${text.substring(0, text.length > 50 ? 50 : text.length)}...');
-
-      // Enviar para backend
-      final response = await ApiService.sendChatMessage(
-        conversationId: _currentConversation!.id,
-        message: text,
-      );
-
-      // Adicionar resposta da IA
-      if (response['ai_response'] != null) {
-        final aiMessage = ChatMessage(
-          id: response['ai_response']['message_id'],
-          text: response['ai_response']['content'],
-          isUser: false,
-          timestamp: DateTime.now(),
-          intent: response['ai_response']['intent_detected'],
-          confidence: response['ai_response']['confidence_score']?.toDouble(),
-          metadata: response['ai_response'],
-        );
-        _messages.add(aiMessage);
-      }
-
-      debugPrint('✅ Mensagem enviada e resposta recebida');
-      _isSending = false;
-      notifyListeners();
-      return true;
-    } catch (e) {
-      debugPrint('❌ Erro ao enviar mensagem: $e');
-      _error = 'Erro ao enviar mensagem. Tente novamente.';
-      
-      // Remover mensagem otimista em caso de erro
-      if (_messages.isNotEmpty && _messages.last.isUser) {
-        _messages.removeLast();
-      }
-
-      _isSending = false;
-      notifyListeners();
-      return false;
-    }
+  if (_currentConversation == null) {
+    debugPrint('⚠️ Nenhuma conversa ativa');
+    return false;
   }
 
-  // ============================================================
-  // 🔥 NOVO: GERAR TREINO COM IA
-  // ============================================================
+  if (text.trim().isEmpty) {
+    debugPrint('⚠️ Mensagem vazia');
+    return false;
+  }
 
-    /// Gera um treino personalizado usando as informações da conversa
-  Future<bool> generateWorkoutFromConversation() async {
-    if (_currentConversation == null) {
-      debugPrint('⚠️ Nenhuma conversa ativa');
-      _error = 'Inicie uma conversa antes de gerar um treino';
-      notifyListeners();
-      return false;
+  try {
+    _isSending = true;
+    _error = null;
+
+    // Adicionar mensagem do usuário
+    final userMessage = ChatMessage(
+      text: text,
+      isUser: true,
+      timestamp: DateTime.now(),
+    );
+    _messages.add(userMessage);
+    notifyListeners();
+
+    debugPrint('📤 Enviando: "$text"');
+
+    // Enviar para backend
+    final response = await ApiService.sendChatMessage(
+      conversationId: _currentConversation!.id,
+      message: text,
+    );
+
+    debugPrint('📦 Resposta completa: ${response.toString()}');
+
+    // Adicionar resposta da IA
+    if (response['ai_response'] != null) {
+      final aiResponse = response['ai_response'];
+      
+      final aiMessage = ChatMessage(
+        id: aiResponse['message_id'],
+        text: aiResponse['content'],
+        isUser: false,
+        timestamp: DateTime.now(),
+        intent: aiResponse['intent_detected'],
+        confidence: aiResponse['confidence_score']?.toDouble(),
+        metadata: aiResponse,
+      );
+      _messages.add(aiMessage);
+
+      // 🔥 FIX: Verificar action PRIMEIRO
+      if (response.containsKey('action') && response['action'] == 'generate_workout') {
+        debugPrint('🎯 ACTION DETECTADA: generate_workout');
+        
+        final preferences = response['workout_preferences'];
+        debugPrint('   Preferências: $preferences');
+        
+        // Chamar geração automática
+        await _generateWorkoutWithPreferences(preferences);
+      }
+      // DEPOIS verificar no aiResponse
+      else if (aiResponse['action'] == 'generate_workout') {
+        debugPrint('🎯 ACTION no aiResponse: generate_workout');
+        
+        final preferences = aiResponse['workout_preferences'];
+        await _generateWorkoutWithPreferences(preferences);
+      }
+
+      // Processar opções para UI
+      if (aiResponse['options'] != null) {
+        debugPrint('📋 Opções: ${aiResponse['options'].length}');
+      }
     }
 
+    debugPrint('✅ Mensagem processada');
+    _isSending = false;
+    notifyListeners();
+    return true;
+    
+  } catch (e, stackTrace) {
+    debugPrint('❌ Erro: $e');
+    debugPrint('Stack: $stackTrace');
+    
+    _error = 'Erro ao enviar mensagem';
+    
+    // Remover mensagem otimista
+    if (_messages.isNotEmpty && _messages.last.isUser) {
+      _messages.removeLast();
+    }
+
+    _isSending = false;
+    notifyListeners();
+    return false;
+  }
+}
+  // ============================================================
+  // 🔥 GERAR TREINO AUTOMÁTICO COM PREFERÊNCIAS
+  // ============================================================
+
+  /// Método privado chamado automaticamente quando o backend retorna action: 'generate_workout'
+  Future<void> _generateWorkoutWithPreferences(Map<String, dynamic> preferences) async {
     try {
       _isGeneratingWorkout = true;
       notifyListeners();
 
-      debugPrint('🏋️ Gerando treino com base na conversa ${_currentConversation!.id}');
+      debugPrint('🏋️ Gerando treino automático com preferências da conversa...');
+      debugPrint('   Dias: ${preferences['days']}');
+      debugPrint('   Foco: ${preferences['focus']}');
+      debugPrint('   Dificuldade: ${preferences['difficulty']}');
 
-      // Chamar o endpoint de geração de treino
-      final response = await ApiService.generateAIWorkoutPlan();
+      // Chamar endpoint específico do chatbot
+      final response = await ApiService.generateWorkoutFromChat(
+        conversationId: _currentConversation!.id,
+        daysPerWeek: preferences['days'] ?? 5,
+        focus: preferences['focus'] ?? 'full_body',
+      );
 
-      debugPrint('📦 Resposta completa do backend:');
+      debugPrint('📦 Resposta do backend:');
       debugPrint(response.toString());
 
-      // Verificar se o treino foi criado com sucesso
+      // Processar resposta
       if (response.containsKey('workout_created') && response['workout_created'] == true) {
-        // ✅ Formato esperado: treino já criado no banco
+        // ✅ Treino já criado no banco
         final workout = response['workout'];
+        _lastGeneratedWorkout = workout;
+        
         debugPrint('✅ Treino gerado com sucesso!');
         debugPrint('   ID: ${workout['id']}');
         debugPrint('   Nome: ${workout['name']}');
         debugPrint('   Exercícios: ${workout['exercises']?.length ?? 0}');
 
-        _isGeneratingWorkout = false;
-        notifyListeners();
-        return true;
-        
+        // Adicionar mensagem de sucesso na conversa
+        final successMessage = ChatMessage(
+          text: '✅ Treino criado com sucesso!\n\n'
+                '📋 ${workout['name']}\n'
+                '⏱️ Duração: ${workout['estimated_duration']} min\n'
+                '💪 ${workout['exercises']?.length ?? 0} exercícios\n\n'
+                'Acesse a seção "Recomendações da IA" para ver detalhes!',
+          isUser: false,
+          timestamp: DateTime.now(),
+          intent: 'workout_generated',
+          confidence: 1.0,
+        );
+        _messages.add(successMessage);
+
       } else if (response.containsKey('ai_generated_workout')) {
-        // 📝 Formato alternativo: apenas o plano foi gerado, precisamos criar o treino
-        debugPrint('📝 Backend retornou apenas o plano. Criando treino no banco...');
+        // 📝 Apenas plano gerado, criar treino no banco
+        debugPrint('📝 Criando treino no banco...');
         
         final aiWorkout = response['ai_generated_workout'];
         final planInfo = aiWorkout['plan_info'] as Map<String, dynamic>;
         final workoutPlan = aiWorkout['workout_plan'] as List<dynamic>;
 
-        // Criar nome inteligente para o treino
-        final focus = planInfo['focus'] ?? 'full_body';
+        // Criar nome do treino
+        final focus = preferences['focus'] ?? 'full_body';
         final duration = planInfo['estimated_duration'] ?? 30;
-        final focusCapitalized = focus.toString().replaceAll('_', ' ').split(' ')
-            .map((word) => word.isNotEmpty ? word[0].toUpperCase() + word.substring(1) : '')
-            .join(' ');
-        final workoutName = 'Treino IA - $focusCapitalized ($duration min)';
+        final focusLabel = _getFocusLabel(focus);
+        final workoutName = 'Treino IA - $focusLabel ($duration min)';
 
-        debugPrint('📝 Criando treino: $workoutName');
-
-        // 1. Criar o treino no banco
+        // 1. Criar treino
         final createResponse = await ApiService.createWorkout(
           name: workoutName,
-          description: 'Treino personalizado gerado pela IA com base na conversa',
-          difficultyLevel: planInfo['difficulty']?.toString() ?? 'intermediate',
+          description: 'Treino personalizado gerado pela IA',
+          difficultyLevel: preferences['difficulty'] ?? 'intermediate',
           estimatedDuration: duration,
-          workoutType: focus.toString(),
+          workoutType: focus,
         );
 
-        // Extrair ID do treino (pode estar em 'id' ou 'workout.id')
-        int? newWorkoutId;
+        int? workoutId;
         if (createResponse.containsKey('id')) {
-          newWorkoutId = createResponse['id'] as int;
-        } else if (createResponse.containsKey('workout') && 
-                   createResponse['workout'] is Map &&
-                   (createResponse['workout'] as Map).containsKey('id')) {
-          newWorkoutId = (createResponse['workout'] as Map)['id'] as int;
+          workoutId = createResponse['id'] as int;
+        } else if (createResponse.containsKey('workout')) {
+          workoutId = (createResponse['workout'] as Map)['id'] as int;
         }
 
-        if (newWorkoutId == null) {
-          throw Exception('Backend não retornou ID do treino criado');
+        if (workoutId == null) {
+          throw Exception('ID do treino não retornado');
         }
 
-        debugPrint('✅ Treino criado no banco! ID: $newWorkoutId');
+        debugPrint('✅ Treino criado! ID: $workoutId');
 
-        // 2. Adicionar cada exercício ao treino
-        debugPrint('📋 Adicionando ${workoutPlan.length} exercícios...');
-        
+        // 2. Adicionar exercícios
         int successCount = 0;
         for (var exerciseData in workoutPlan) {
           try {
             final exercise = exerciseData['exercise'] as Map<String, dynamic>;
-            final exerciseId = exercise['id'] as int;
-            final exerciseName = exercise['name'] as String;
-            final orderNum = exerciseData['order'] as int;
-            
             await ApiService.addExerciseToWorkout(
-              workoutId: newWorkoutId,
-              exerciseId: exerciseId,
+              workoutId: workoutId,
+              exerciseId: exercise['id'] as int,
               sets: exerciseData['sets'] as int,
               reps: exerciseData['reps']?.toString() ?? '8-12',
               restTime: exerciseData['rest_time_seconds'] as int,
-              orderInWorkout: orderNum,
+              orderInWorkout: exerciseData['order'] as int,
             );
-            
             successCount++;
-            debugPrint('   ✅ [$successCount/${workoutPlan.length}] $exerciseName adicionado');
-            
           } catch (e) {
-            final exerciseName = (exerciseData['exercise'] as Map)['name'];
-            debugPrint('   ⚠️ Erro ao adicionar $exerciseName: $e');
+            debugPrint('⚠️ Erro ao adicionar exercício: $e');
           }
         }
 
-        if (successCount == 0) {
-          throw Exception('Nenhum exercício foi adicionado ao treino');
-        }
+        debugPrint('🎉 $successCount/${workoutPlan.length} exercícios adicionados');
 
-        debugPrint('🎉 Treino criado! $successCount/${ workoutPlan.length} exercícios adicionados');
-        
-        _isGeneratingWorkout = false;
-        notifyListeners();
-        return true;
+        // Mensagem de sucesso
+        final successMessage = ChatMessage(
+          text: '✅ Treino "$workoutName" criado!\n\n'
+                '💪 $successCount exercícios adicionados\n'
+                '⏱️ Duração: $duration min\n\n'
+                'Veja na seção "Recomendações da IA"!',
+          isUser: false,
+          timestamp: DateTime.now(),
+          intent: 'workout_generated',
+          confidence: 1.0,
+        );
+        _messages.add(successMessage);
 
       } else {
-        debugPrint('❌ Resposta não contém workout_created nem ai_generated_workout');
-        debugPrint('   Keys disponíveis: ${response.keys.join(", ")}');
-        throw Exception('Formato de resposta desconhecido do backend');
+        throw Exception('Formato de resposta desconhecido');
       }
 
     } catch (e, stackTrace) {
       debugPrint('❌ Erro ao gerar treino: $e');
-      debugPrint('Stack trace: $stackTrace');
-      _error = 'Erro ao gerar treino: $e';
+      debugPrint('Stack: $stackTrace');
+      
+      _error = 'Erro ao gerar treino';
+      
+      // Adicionar mensagem de erro
+      final errorMessage = ChatMessage(
+        text: '❌ Desculpe, houve um erro ao gerar seu treino.\n\n'
+              'Tente novamente ou entre em contato com o suporte.',
+        isUser: false,
+        timestamp: DateTime.now(),
+        intent: 'error',
+      );
+      _messages.add(errorMessage);
+      
+    } finally {
       _isGeneratingWorkout = false;
       notifyListeners();
-      return false;
     }
   }
+
+  /// Helper para traduzir código de foco em label
+  String _getFocusLabel(String focus) {
+    const labels = {
+      'full_body': 'Corpo Completo',
+      'upper': 'Parte Superior',
+      'lower': 'Parte Inferior',
+      'chest': 'Peito',
+      'back': 'Costas',
+      'legs': 'Pernas',
+      'arms': 'Braços',
+      'shoulders': 'Ombros',
+      'cardio': 'Cardio',
+    };
+    return labels[focus] ?? focus;
+  }
+
+  // ============================================================
+// 🔥 GERAR TREINO MANUAL (CHAMADA DIRETA)
+// ============================================================
+
+/// Método público para gerar treino manualmente (ex: botão na UI)
+Future<bool> generateWorkoutFromConversation() async {
+  if (_currentConversation == null) {
+    debugPrint('⚠️ Nenhuma conversa ativa');
+    _error = 'Inicie uma conversa antes de gerar um treino';
+    notifyListeners();
+    return false;
+  }
+
+  try {
+    _isGeneratingWorkout = true;
+    notifyListeners();
+
+    debugPrint('🏋️ Gerando treino manual');
+
+    final response = await ApiService.generateWorkoutFromChat(
+      conversationId: _currentConversation!.id,
+      daysPerWeek: 5,
+      focus: 'full_body',
+    );
+
+    debugPrint('📦 Resposta do backend (manual):');
+    debugPrint(response.toString());
+
+    // 🔥 FIX: Tratar AMBOS os casos igual ao método automático
+    if (response.containsKey('workout_created') && response['workout_created'] == true) {
+      // ✅ CASO 1: Treino já criado no banco
+      final workout = response['workout'];
+      _lastGeneratedWorkout = workout;
+      
+      debugPrint('✅ Treino manual gerado (já criado)!');
+      debugPrint('   ID: ${workout['id']}');
+      
+      // Adicionar mensagem de sucesso
+      final successMessage = ChatMessage(
+        text: '✅ Treino criado com sucesso!\n\n'
+              '📋 ${workout['name']}\n'
+              '⏱️ Duração: ${workout['estimated_duration']} min\n'
+              '💪 ${workout['exercises']?.length ?? 0} exercícios\n\n'
+              'Acesse "Meus Treinos" para começar!',
+        isUser: false,
+        timestamp: DateTime.now(),
+        intent: 'workout_generated',
+        confidence: 1.0,
+      );
+      _messages.add(successMessage);
+      
+      _isGeneratingWorkout = false;
+      notifyListeners();
+      return true;
+
+    } else if (response.containsKey('ai_generated_workout')) {
+      // 📝 CASO 2: Apenas plano gerado, CRIAR treino no banco
+      debugPrint('📝 Plano gerado, criando treino no banco...');
+      
+      final aiWorkout = response['ai_generated_workout'];
+      final planInfo = aiWorkout['plan_info'] as Map<String, dynamic>;
+      final workoutPlan = aiWorkout['workout_plan'] as List<dynamic>;
+
+      // Extrair info do plano
+      final focus = planInfo['focus'] ?? 'full_body';
+      final difficulty = planInfo['difficulty'] ?? 'intermediate';
+      final duration = planInfo['estimated_duration'] ?? 30;
+      final daysPerWeek = planInfo['days_per_week'] ?? 5;
+      
+      final focusLabel = _getFocusLabel(focus);
+      final workoutName = 'Treino IA - $focusLabel';
+
+      debugPrint('   Nome: $workoutName');
+      debugPrint('   Exercícios: ${workoutPlan.length}');
+
+      // 1️⃣ Criar treino
+      final createResponse = await ApiService.createWorkout(
+        name: workoutName,
+        description: 'Treino personalizado gerado pela IA com base na conversa.\n'
+                    'Foco: $focusLabel | $daysPerWeek dias/semana',
+        difficultyLevel: difficulty,
+        estimatedDuration: duration,
+        workoutType: focus,
+      );
+
+      // Obter ID do treino criado
+      int? workoutId;
+      if (createResponse.containsKey('id')) {
+        workoutId = createResponse['id'] as int;
+      } else if (createResponse.containsKey('workout')) {
+        workoutId = (createResponse['workout'] as Map)['id'] as int;
+      }
+
+      if (workoutId == null) {
+        throw Exception('ID do treino não retornado pelo backend');
+      }
+
+      debugPrint('✅ Treino criado! ID: $workoutId');
+
+      // 2️⃣ Adicionar exercícios ao treino
+      int successCount = 0;
+      int errorCount = 0;
+      
+      for (var exerciseData in workoutPlan) {
+        try {
+          final exercise = exerciseData['exercise'] as Map<String, dynamic>;
+          final exerciseId = exercise['id'] as int;
+          
+          await ApiService.addExerciseToWorkout(
+            workoutId: workoutId,
+            exerciseId: exerciseId,
+            sets: exerciseData['sets'] as int,
+            reps: exerciseData['reps']?.toString() ?? '8-12',
+            restTime: exerciseData['rest_time_seconds'] as int,
+            orderInWorkout: exerciseData['order'] as int,
+          );
+          
+          successCount++;
+          debugPrint('   ✓ Exercício ${exercise['name']} adicionado');
+          
+        } catch (e) {
+          errorCount++;
+          debugPrint('   ✗ Erro ao adicionar exercício: $e');
+        }
+      }
+
+      debugPrint('🎉 Treino finalizado:');
+      debugPrint('   ✅ $successCount exercícios adicionados');
+      debugPrint('   ❌ $errorCount erros');
+
+      // Salvar info do treino
+      _lastGeneratedWorkout = {
+        'id': workoutId,
+        'name': workoutName,
+        'exercises': workoutPlan,
+        'duration': duration,
+        'focus': focus,
+      };
+
+      // Mensagem de sucesso na conversa
+      final successMessage = ChatMessage(
+        text: '✅ Treino "$workoutName" criado!\n\n'
+              '💪 $successCount exercícios adicionados\n'
+              '⏱️ Duração estimada: $duration min\n'
+              '📅 $daysPerWeek dias por semana\n\n'
+              '👉 Acesse "Meus Treinos" para começar!',
+        isUser: false,
+        timestamp: DateTime.now(),
+        intent: 'workout_generated',
+        confidence: 1.0,
+      );
+      _messages.add(successMessage);
+
+      _isGeneratingWorkout = false;
+      notifyListeners();
+      return true;
+
+    } else {
+      // ❌ Resposta inesperada
+      throw Exception('Formato de resposta desconhecido: ${response.keys}');
+    }
+
+  } catch (e, stackTrace) {
+    debugPrint('❌ Erro ao gerar treino manual: $e');
+    debugPrint('Stack: $stackTrace');
+    
+    _error = 'Erro ao gerar treino: ${e.toString()}';
+    
+    // Adicionar mensagem de erro na conversa
+    final errorMessage = ChatMessage(
+      text: '❌ Desculpe, houve um erro ao gerar seu treino.\n\n'
+            'Detalhes: ${e.toString()}\n\n'
+            'Por favor, tente novamente.',
+      isUser: false,
+      timestamp: DateTime.now(),
+      intent: 'error',
+    );
+    _messages.add(errorMessage);
+    
+    _isGeneratingWorkout = false;
+    notifyListeners();
+    return false;
+  }
+}
 
   // ============================================================
   // CARREGAR HISTÓRICO
@@ -340,7 +581,7 @@ class ChatService extends ChangeNotifier {
 
       _currentConversation = null;
       _messages.clear();
-      _lastGeneratedWorkout = null; // 🔥 LIMPAR TREINO GERADO
+      _lastGeneratedWorkout = null;
 
       debugPrint('✅ Conversa finalizada');
       notifyListeners();
@@ -436,7 +677,6 @@ class ChatService extends ChangeNotifier {
 
       debugPrint('🔄 Retomando conversa $conversationId');
 
-      // Buscar histórico
       final response = await ApiService.getConversationHistory(
         conversationId: conversationId,
       );
@@ -481,8 +721,8 @@ class ChatService extends ChangeNotifier {
     _isLoading = false;
     _isSending = false;
     _error = null;
-    _isGeneratingWorkout = false; // 🔥 LIMPAR
-    _lastGeneratedWorkout = null; // 🔥 LIMPAR
+    _isGeneratingWorkout = false;
+    _lastGeneratedWorkout = null;
     notifyListeners();
   }
 }
