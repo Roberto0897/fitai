@@ -7,6 +7,7 @@ from rest_framework.response import Response
 from firebase_admin import auth
 from django.contrib.auth.models import User
 from .models import UserProfile, UserProgress, DailyTip
+from django.utils import timezone
 
 
 def verify_firebase_token(request):

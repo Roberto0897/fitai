@@ -50,6 +50,7 @@ class ChatMessage {
   final double? confidence;
   final String? reaction;
   final Map<String, dynamic>? metadata;
+  final List<Map<String, dynamic>>? options; // ✅ ADICIONADO: Botões de ação
 
   ChatMessage({
     this.id,
@@ -60,9 +61,18 @@ class ChatMessage {
     this.confidence,
     this.reaction,
     this.metadata,
+    this.options, // ✅ ADICIONADO
   });
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
+    // ✅ Processar options se existir
+    List<Map<String, dynamic>>? options;
+    if (json['options'] != null && json['options'] is List) {
+      options = List<Map<String, dynamic>>.from(
+        (json['options'] as List).map((opt) => Map<String, dynamic>.from(opt))
+      );
+    }
+
     return ChatMessage(
       id: json['id'],
       text: json['content'] ?? json['text'],
@@ -74,6 +84,7 @@ class ChatMessage {
       confidence: json['confidence_score']?.toDouble(),
       reaction: json['user_reaction'],
       metadata: json['ai_metadata'],
+      options: options, // ✅ ADICIONADO
     );
   }
 
@@ -87,8 +98,12 @@ class ChatMessage {
       if (confidence != null) 'confidence': confidence,
       if (reaction != null) 'reaction': reaction,
       if (metadata != null) 'metadata': metadata,
+      if (options != null) 'options': options, // ✅ ADICIONADO
     };
   }
+
+  /// ✅ NOVO: Helper para verificar se tem opções
+  bool get hasOptions => options != null && options!.isNotEmpty;
 }
 
 /// Tipos de conversa disponíveis
@@ -125,3 +140,39 @@ enum MessageReaction {
   const MessageReaction(this.value, this.label, this.emoji);
 }
 
+/// ✅ NOVO: Model para opções/botões de ação
+class MessageOption {
+  final String id;
+  final String label;
+  final String? emoji;
+  final String action; // 'navigate', 'start_workout', 'chat', etc
+  final Map<String, dynamic>? data;
+
+  MessageOption({
+    required this.id,
+    required this.label,
+    this.emoji,
+    required this.action,
+    this.data,
+  });
+
+  factory MessageOption.fromJson(Map<String, dynamic> json) {
+    return MessageOption(
+      id: json['id'] ?? '',
+      label: json['label'] ?? '',
+      emoji: json['emoji'],
+      action: json['action'] ?? 'chat',
+      data: json['data'],
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'label': label,
+      if (emoji != null) 'emoji': emoji,
+      'action': action,
+      if (data != null) 'data': data,
+    };
+  }
+}

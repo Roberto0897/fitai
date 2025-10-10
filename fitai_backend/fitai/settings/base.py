@@ -186,7 +186,7 @@ AI_MAX_RESPONSE_LENGTH = config('AI_MAX_RESPONSE_LENGTH', default=2000, cast=int
 
 # Google Gemini API Configuration
 GEMINI_API_KEY = config('GEMINI_API_KEY', default='')
-GEMINI_MODEL = config('GEMINI_MODEL', default='gemini-2.0-flash-exp')  # Modelo mais rápido e gratuito
+GEMINI_MODEL = config('GEMINI_MODEL', default='gemini-2.5-flash')  # Modelo mais rápido e gratuito gemini-2.0-flash-exp
 GEMINI_MAX_TOKENS = config('GEMINI_MAX_TOKENS', default=1000, cast=int)
 GEMINI_TEMPERATURE = config('GEMINI_TEMPERATURE', default=0.7, cast=float)
 

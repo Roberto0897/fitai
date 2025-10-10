@@ -226,13 +226,11 @@ def workout_history(request):
     """
     from django.db.models import Sum, Count
     from datetime import timedelta
-    from collections import defaultdict
     
-    # Buscar sessões concluídas do usuário
     sessions = WorkoutSession.objects.filter(
         user=request.user,
         completed=True
-    ).select_related('workout').order_by('-completed_at')[:50]  # Últimos 50 treinos
+    ).select_related('workout').order_by('-completed_at')[:50]
     
     if not sessions.exists():
         return Response({
@@ -241,18 +239,20 @@ def workout_history(request):
             'message': 'Nenhum treino concluído ainda'
         })
     
-    # Formatar dados para o Flutter
     history = []
     for session in sessions:
-        # Calcular exercícios completados
         exercise_logs = ExerciseLog.objects.filter(session=session)
         total_exercises = exercise_logs.count()
-        completed_exercises = exercise_logs.filter(completed=True, skipped=False).count()
         
-        # Data do treino
+        # ✅ CORREÇÃO: Se a sessão foi concluída, contar todos os logs como completos
+        # (exceto os pulados)
+        if session.completed:
+            completed_exercises = exercise_logs.exclude(skipped=True).count()
+        else:
+            completed_exercises = exercise_logs.filter(completed=True, skipped=False).count()
+        
         date = session.completed_at if session.completed_at else session.created_at
         
-        # Grupos musculares trabalhados
         muscle_groups = []
         if session.workout.target_muscle_groups:
             muscle_groups = [g.strip() for g in session.workout.target_muscle_groups.split(',')]
@@ -260,15 +260,15 @@ def workout_history(request):
         history.append({
             'id': session.id,
             'workout_name': session.workout.name,
-            'name': session.workout.name,  # Alias
+            'name': session.workout.name,
             'date': date.isoformat(),
             'completed_at': date.isoformat(),
             'duration': session.duration_minutes or session.workout.estimated_duration or 0,
             'calories': session.calories_burned or session.workout.calories_estimate or 0,
             'category': session.workout.workout_type or 'Geral',
             'muscle_groups': muscle_groups,
-            'focus_areas': muscle_groups,  # Alias
-            'exercises_completed': completed_exercises,
+            'focus_areas': muscle_groups,
+            'exercises_completed': completed_exercises,  # ✅ Agora correto
             'total_exercises': total_exercises,
             'completed': True,
             'user_rating': session.user_rating,
@@ -277,7 +277,7 @@ def workout_history(request):
     
     return Response({
         'results': history,
-        'sessions': history,  # Alias para compatibilidade
+        'sessions': history,
         'count': len(history),
         'total': len(history)
     })
@@ -511,10 +511,47 @@ def complete_workout_session(request, session_id=None):
         calories_burned = request.data.get('calories_burned')
         user_notes = request.data.get('notes', '')
         
-        # Calcular duração se ainda não foi calculada
-        if session.started_at and not session.duration_minutes:
+        # ✅ CORREÇÃO 1: CALCULAR DURAÇÃO REAL
+        if session.started_at:
             duration = timezone.now() - session.started_at
-            session.duration_minutes = int(duration.total_seconds() / 60)
+            duration_minutes = int(duration.total_seconds() / 60)
+            session.duration_minutes = duration_minutes
+            print(f'⏱️ Duração REAL calculada: {duration_minutes} min')
+        else:
+            # Fallback para duração estimada
+            session.duration_minutes = session.workout.estimated_duration or 30
+            print(f'⚠️ Usando duração estimada: {session.duration_minutes} min')
+        
+        # ✅ CORREÇÃO 2: SALVAR GRUPOS MUSCULARES REAIS
+        # Buscar os exercícios realizados na sessão
+        exercise_logs = ExerciseLog.objects.filter(
+            session=session,
+            completed=True,
+            skipped=False
+        ).select_related('workout_exercise__exercise')
+        
+        # Coletar grupos musculares únicos dos exercícios REALIZADOS
+        muscle_groups_set = set()
+        for log in exercise_logs:
+            muscle_group = log.workout_exercise.exercise.muscle_group
+            if muscle_group:
+                muscle_groups_set.add(muscle_group)
+        
+        # Se não realizou nenhum exercício, usar os grupos do workout
+        if not muscle_groups_set and session.workout.target_muscle_groups:
+            muscle_groups_list = [
+                g.strip() 
+                for g in session.workout.target_muscle_groups.split(',')
+                if g.strip()
+            ]
+        else:
+            muscle_groups_list = list(muscle_groups_set)
+        
+        # Salvar como string separada por vírgula
+        session.workout.target_muscle_groups = ', '.join(muscle_groups_list)
+        session.workout.save()
+        
+        print(f'💪 Grupos musculares salvos: {muscle_groups_list}')
         
         # Finalizar sessão
         session.completed = True
@@ -530,12 +567,20 @@ def complete_workout_session(request, session_id=None):
         session.save()
         
         print(f'✅ Sessão {session.id} finalizada com sucesso!')
-        print(f'   Duration: {session.duration_minutes}min')
+        print(f'   Duração: {session.duration_minutes}min')
+        print(f'   Grupos musculares: {muscle_groups_list}')
         
         # Estatísticas da sessão
         total_exercises = ExerciseLog.objects.filter(session=session).count()
-        completed_exercises = ExerciseLog.objects.filter(session=session, completed=True, skipped=False).count()
-        skipped_exercises = ExerciseLog.objects.filter(session=session, skipped=True).count()
+        completed_exercises = ExerciseLog.objects.filter(
+            session=session, 
+            completed=True, 
+            skipped=False
+        ).count()
+        skipped_exercises = ExerciseLog.objects.filter(
+            session=session, 
+            skipped=True
+        ).count()
         
         # Atualizar progresso do usuário
         from apps.users.models import UserProgress
@@ -552,15 +597,18 @@ def complete_workout_session(request, session_id=None):
                 "id": session.id,
                 "workout_name": session.workout.name,
                 "completed_at": session.completed_at,
-                "duration_minutes": session.duration_minutes,
+                "duration_minutes": session.duration_minutes,  # ✅ Duração REAL
                 "user_rating": session.user_rating,
-                "calories_burned": session.calories_burned
+                "calories_burned": session.calories_burned,
+                "muscle_groups_worked": muscle_groups_list  # ✅ Grupos REAIS
             },
             "exercise_summary": {
                 "total_exercises": total_exercises,
                 "completed_exercises": completed_exercises,
                 "skipped_exercises": skipped_exercises,
-                "completion_rate": round(completed_exercises / total_exercises * 100, 1) if total_exercises > 0 else 0
+                "completion_rate": round(
+                    completed_exercises / total_exercises * 100, 1
+                ) if total_exercises > 0 else 0
             },
             "congratulations": {
                 "message": "Excelente trabalho!",
@@ -569,8 +617,10 @@ def complete_workout_session(request, session_id=None):
         }, status=status.HTTP_200_OK)
         
     except WorkoutSession.DoesNotExist:
-        return Response({"error": "Nenhuma sessão encontrada"}, 
-                       status=status.HTTP_404_NOT_FOUND)
+        return Response(
+            {"error": "Nenhuma sessão encontrada"}, 
+            status=status.HTTP_404_NOT_FOUND
+        )
 
 @api_view(['POST'])  # ✅ Aceita DELETE e POST
 @permission_classes([IsAuthenticated])
@@ -1424,7 +1474,8 @@ def generate_onboarding_workout(request):
                 'exercises_count': workout.workout_exercises.count(),
                 'estimated_duration': workout.estimated_duration,
                 'difficulty_level': workout.difficulty_level,
-                'is_ai_generated': True,
+                #'is_ai_generated': True,
+                'is_recommended': True,
             }, status=status.HTTP_201_CREATED)
         else:
             return Response({

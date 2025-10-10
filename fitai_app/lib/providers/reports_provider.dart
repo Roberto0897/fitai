@@ -1,5 +1,5 @@
-/// Provider para gerenciar dados de relatórios
-/// Localização: lib/providers/reports_provider.dart
+// Provider CORRIGIDO para gerenciar dados de relatórios
+// Localização: lib/providers/reports_provider.dart
 
 import 'package:flutter/material.dart';
 import '../models/workout_history_model.dart';
@@ -90,9 +90,11 @@ class ReportsProvider extends ChangeNotifier {
     try {
       print('📊 Carregando relatórios...');
 
-      // Carregar em paralelo para melhor performance
+      // CARREGAR HISTÓRICO PRIMEIRO (sequencial)
+      await _loadWorkoutHistory();
+      
+      // Depois carregar stats e peso em paralelo
       await Future.wait([
-        _loadWorkoutHistory(),
         _loadStats(),
         _loadWeightHistory(),
       ]);
@@ -128,35 +130,46 @@ class ReportsProvider extends ChangeNotifier {
       
       final response = await ApiService.get('/sessions/history/');
       
-      print('📦 Resposta do histórico: $response');
+      print('📦 Resposta COMPLETA do histórico:');
+      print('   Tipo: ${response.runtimeType}');
+      print('   Conteúdo: $response');
 
       // Tentar diferentes formatos de resposta
       List<dynamic>? sessionsList;
       
       if (response is List) {
+        print('✅ Resposta é uma lista direta');
         sessionsList = response;
       } else if (response is Map) {
+        print('📋 Resposta é um Map, procurando chaves...');
+        print('   Chaves disponíveis: ${response.keys.toList()}');
+        
         // Tentar diferentes chaves possíveis
         sessionsList = response['results'] ?? 
                       response['sessions'] ?? 
                       response['data'] ??
                       response['history'];
+        
+        if (sessionsList != null) {
+          print('✅ Lista encontrada em: ${response.keys.firstWhere((k) => response[k] == sessionsList)}');
+        }
       }
 
-      if (sessionsList == null) {
-        print('⚠️ Formato de resposta inesperado para histórico');
-        _historyError = 'Formato de dados inválido';
+      if (sessionsList == null || sessionsList.isEmpty) {
+        print('⚠️ Nenhuma sessão encontrada no histórico');
+        _historyError = 'Nenhum treino encontrado';
         _workoutHistory = [];
         return;
       }
+
+      print('📊 Processando ${sessionsList.length} sessões...');
 
       _workoutHistory = sessionsList
           .map((json) {
             try {
               return WorkoutHistoryModel.fromJson(json);
-            } catch (e) {
-              print('⚠️ Erro ao parsear workout: $e');
-              print('JSON problemático: $json');
+            } catch (e, stackTrace) {
+              print('❌ ERRO ao parsear workout: $e');
               return null;
             }
           })
@@ -166,14 +179,14 @@ class ReportsProvider extends ChangeNotifier {
       // Ordenar do mais recente para o mais antigo
       _workoutHistory.sort((a, b) => b.date.compareTo(a.date));
       
-      print('✅ ${_workoutHistory.length} treinos carregados');
+      print('✅ ${_workoutHistory.length} treinos carregados com sucesso');
       
     } on ApiException catch (e) {
       print('❌ Erro API ao buscar histórico: ${e.message}');
       _historyError = _getErrorMessage(e);
       _workoutHistory = [];
-    } catch (e) {
-      print('❌ Erro ao buscar histórico: $e');
+    } catch (e, stackTrace) {
+      print('❌ Erro GERAL ao buscar histórico: $e');
       _historyError = 'Erro ao buscar histórico de treinos';
       _workoutHistory = [];
     } finally {
@@ -182,7 +195,7 @@ class ReportsProvider extends ChangeNotifier {
   }
 
   // ============================================================
-  // CARREGAR ESTATÍSTICAS
+  // CARREGAR ESTATÍSTICAS - AGORA COM EXERCÍCIOS!
   // ============================================================
 
   Future<void> _loadStats() async {
@@ -192,31 +205,11 @@ class ReportsProvider extends ChangeNotifier {
     try {
       print('📊 Buscando estatísticas...');
       
-      final response = await ApiService.get('/analytics/');
+      // SEMPRE calcular localmente com os dados completos
+      _calculateStatsLocally();
       
-      print('📦 Resposta das stats: $response');
-
-      // Tentar parsear as stats do backend
-      try {
-        _stats = WorkoutStats.fromJson(response);
-        print('✅ Stats carregadas do backend');
-      } catch (e) {
-        print('⚠️ Erro ao parsear stats do backend: $e');
-        print('📝 Calculando stats localmente...');
-        _calculateStatsLocally();
-      }
-      
-    } on ApiException catch (e) {
-      if (e.statusCode == 404) {
-        print('⚠️ Endpoint de analytics não existe, calculando localmente');
-        _calculateStatsLocally();
-      } else {
-        print('❌ Erro API ao buscar stats: ${e.message}');
-        _statsError = _getErrorMessage(e);
-        _calculateStatsLocally();
-      }
     } catch (e) {
-      print('❌ Erro ao buscar stats: $e');
+      print('❌ Erro ao calcular stats: $e');
       _statsError = 'Erro ao buscar estatísticas';
       _calculateStatsLocally();
     } finally {
@@ -228,6 +221,7 @@ class ReportsProvider extends ChangeNotifier {
     print('🧮 Calculando estatísticas localmente...');
     
     if (_workoutHistory.isEmpty) {
+      print('⚠️ Nenhum treino no histórico para calcular stats');
       _stats = WorkoutStats(
         totalWorkouts: 0,
         totalDuration: 0,
@@ -262,11 +256,37 @@ class ReportsProvider extends ChangeNotifier {
 
     // Frequência de grupos musculares
     final muscleGroupFrequency = <String, int>{};
+    print('📊 Contabilizando grupos musculares...');
+    
     for (var workout in _workoutHistory) {
+      if (workout.muscleGroups.isEmpty) continue;
+      
       for (var muscle in workout.muscleGroups) {
         muscleGroupFrequency[muscle] = (muscleGroupFrequency[muscle] ?? 0) + 1;
       }
     }
+
+    // ⭐ NOVO: Calcular exercício favorito
+    // Se o modelo tem exercícios, contar; senão usar nome do treino
+    final exerciseFrequency = <String, int>{};
+    
+    for (var workout in _workoutHistory) {
+      // Usar o nome do treino como exercício principal
+      exerciseFrequency[workout.workoutName] = 
+          (exerciseFrequency[workout.workoutName] ?? 0) + 1;
+    }
+
+    String favoriteExercise = 'Nenhum';
+    int favoriteExerciseCount = 0;
+
+    if (exerciseFrequency.isNotEmpty) {
+      final favorite = exerciseFrequency.entries.reduce((a, b) => 
+          a.value > b.value ? a : b);
+      favoriteExercise = favorite.key;
+      favoriteExerciseCount = favorite.value;
+    }
+
+    print('⭐ Exercício favorito: $favoriteExercise ($favoriteExerciseCount x)');
 
     _stats = WorkoutStats(
       totalWorkouts: totalWorkouts,
@@ -276,12 +296,12 @@ class ReportsProvider extends ChangeNotifier {
       currentStreak: _calculateStreak(),
       workoutsByCategory: workoutsByCategory,
       muscleGroupFrequency: muscleGroupFrequency,
-      favoriteExercise: _stats?.favoriteExercise ?? 'Nenhum',
-      favoriteExerciseCount: _stats?.favoriteExerciseCount ?? 0,
+      favoriteExercise: favoriteExercise,
+      favoriteExerciseCount: favoriteExerciseCount,
       averageDuration: totalWorkouts > 0 ? totalDuration / totalWorkouts : 0,
     );
 
-    print('✅ Stats calculadas: ${_stats?.totalWorkouts} treinos');
+    print('✅ Stats calculadas com sucesso');
   }
 
   int _calculateStreak() {
@@ -302,18 +322,15 @@ class ReportsProvider extends ChangeNotifier {
         streak++;
         currentDate = currentDate.subtract(const Duration(days: 1));
       } else {
-        // Se é o primeiro dia e não tem treino, streak é 0
         if (streak == 0 && currentDate.day == DateTime.now().day) {
           break;
         }
-        // Se já começou a contar e não tem treino, quebrou o streak
         if (streak > 0) {
           break;
         }
-        // Pula um dia de descanso
         currentDate = currentDate.subtract(const Duration(days: 1));
         if (DateTime.now().difference(currentDate).inDays > 7) {
-          break; // Não procurar mais de 7 dias atrás
+          break;
         }
       }
     }
@@ -322,53 +339,74 @@ class ReportsProvider extends ChangeNotifier {
   }
 
   // ============================================================
-  // CARREGAR HISTÓRICO DE PESO
+  // CARREGAR HISTÓRICO DE PESO - USANDO LOCAL STORAGE
   // ============================================================
 
   Future<void> _loadWeightHistory() async {
-    _isLoadingWeight = true;
-    _weightError = null;
+  _isLoadingWeight = true;
+  _weightError = null;
+  
+  try {
+    print('⚖️ Carregando histórico de peso da API...');
     
-    try {
-      print('⚖️ Buscando histórico de peso...');
-      
-      // CORREÇÃO: Endpoint não existe ainda no backend
-      // Por enquanto, apenas limpa o histórico
-      print('⚠️ Endpoint de peso não implementado no backend ainda');
-      _weightHistory = [];
-      _weightError = 'Histórico de peso não disponível';
-      
-      // TODO: Quando o endpoint for criado no backend, descomentar:
-      /*
-      final response = await ApiService.get('/users/weight_history/');
-      
-      if (response['weights'] != null) {
-        _weightHistory = (response['weights'] as List)
-            .map((json) => WeightEntry.fromJson(json))
-            .toList();
-            
-        _weightHistory.sort((a, b) => a.date.compareTo(b.date));
-        print('✅ ${_weightHistory.length} registros de peso carregados');
+    // CORREÇÃO 1: Usando o endpoint correto do Django
+    final response = await ApiService.get('/users/weight_history/'); 
+    
+    List<dynamic> weightList = [];
+    
+    // CORREÇÃO 2: Lógica para encontrar a lista de pesos
+    if (response is List) {
+      weightList = response;
+      print('✅ Lista encontrada como resposta direta.');
+    } else if (response is Map) {
+      if (response['results'] is List) {
+         weightList = response['results'] as List<dynamic>;
+         print('✅ Lista encontrada na chave "results".');
+      } 
+      // ⭐ NOVO: Tratar a chave "weights" que a API está usando
+      else if (response['weights'] is List) {
+         weightList = response['weights'] as List<dynamic>;
+         print('✅ Lista encontrada na chave "weights".');
       }
-      */
-      
-    } on ApiException catch (e) {
-      if (e.statusCode == 404) {
-        print('⚠️ Endpoint de peso não existe (404)');
-        _weightError = 'Histórico de peso não disponível';
-      } else {
-        print('❌ Erro API ao buscar peso: ${e.message}');
-        _weightError = _getErrorMessage(e);
-      }
-      _weightHistory = [];
-    } catch (e) {
-      print('❌ Erro ao buscar histórico de peso: $e');
-      _weightError = 'Erro ao buscar histórico de peso';
-      _weightHistory = [];
-    } finally {
-      _isLoadingWeight = false;
     }
+
+    if (weightList.isNotEmpty) {
+      // Mapeia os JSONs para a classe WeightEntry
+      _weightHistory = weightList
+          .map((json) {
+            try {
+              return WeightEntry.fromJson(json); 
+            } catch (e) {
+              print('❌ ERRO ao parsear WeightEntry: $e, JSON: $json');
+              return null;
+            }
+          })
+          .whereType<WeightEntry>() // Remove quaisquer entradas nulas
+          .toList();
+
+      // Ordena por data e confirma
+      _weightHistory.sort((a, b) => a.date.compareTo(b.date)); 
+      print('✅ ${_weightHistory.length} registros de peso carregados com sucesso.');
+    } else {
+      _weightHistory = [];
+      print('⚠️ Nenhuma lista de peso válida encontrada na resposta da API.');
+    }
+    
+    _weightError = null; // Sucesso no carregamento
+    
+  } on ApiException catch (e) {
+    print('⚠️ Erro API ao carregar peso: ${e.message}');
+    _weightError = 'Histórico de peso não disponível';
+    _weightHistory = [];
+  } catch (e) {
+    print('❌ Erro GERAL ao buscar histórico de peso: $e');
+    _weightError = 'Erro ao buscar histórico de peso';
+    _weightHistory = [];
+  } finally {
+    _isLoadingWeight = false;
+    // Não precisa chamar notifyListeners() aqui, pois loadReports() fará isso.
   }
+}
 
   // ============================================================
   // ATUALIZAR PESO
@@ -378,28 +416,46 @@ class ReportsProvider extends ChangeNotifier {
     try {
       print('⚖️ Atualizando peso: $weight kg');
       
-      // Usar o endpoint que existe: /users/set_weight_info/
-      await ApiService.post('/users/set_weight_info/', {
-        'peso_atual': weight,
-      });
+      // Tentar enviar ao backend
+      try {
+        await ApiService.post('/users/set_weight_info/', {
+          'peso_atual': weight,
+        });
+        print('✅ Peso salvo no backend');
+      } catch (e) {
+        print('⚠️ Não foi possível salvar no backend, salvando localmente');
+      }
 
-      // Adicionar ao histórico local
-      _weightHistory.add(WeightEntry(
-        date: DateTime.now(),
-        weight: weight,
-      ));
+      // Adicionar/atualizar no histórico local
+      final now = DateTime.now();
+      
+      // Verificar se já existe entrada de hoje
+      final todayIndex = _weightHistory.indexWhere((w) =>
+        w.date.year == now.year &&
+        w.date.month == now.month &&
+        w.date.day == now.day
+      );
+
+      if (todayIndex >= 0) {
+        _weightHistory[todayIndex] = WeightEntry(
+          date: now,
+          weight: weight,
+        );
+        print('✅ Peso atualizado para hoje');
+      } else {
+        _weightHistory.add(WeightEntry(
+          date: now,
+          weight: weight,
+        ));
+        print('✅ Novo registro de peso adicionado');
+      }
 
       // Ordenar por data
       _weightHistory.sort((a, b) => a.date.compareTo(b.date));
 
       notifyListeners();
-      
-      print('✅ Peso atualizado com sucesso');
       return true;
       
-    } on ApiException catch (e) {
-      print('❌ Erro API ao atualizar peso: ${e.message}');
-      return false;
     } catch (e) {
       print('❌ Erro ao atualizar peso: $e');
       return false;
@@ -428,8 +484,6 @@ class ReportsProvider extends ChangeNotifier {
   void setPeriod(int days) {
     _selectedPeriod = days;
     notifyListeners();
-    // TODO: Implementar filtro no backend quando disponível
-    // loadReports(); // Recarregar com novo período
   }
 
   Future<void> refresh() async {
@@ -446,10 +500,6 @@ class ReportsProvider extends ChangeNotifier {
     _weightError = null;
     notifyListeners();
   }
-
-  // ============================================================
-  // DADOS MOCK (APENAS PARA DESENVOLVIMENTO/TESTE)
-  // ============================================================
 
   void loadMockData() {
     print('📦 Carregando dados mock para desenvolvimento...');
@@ -494,5 +544,83 @@ class ReportsProvider extends ChangeNotifier {
 
     notifyListeners();
     print('✅ Dados mock carregados');
+  }
+}
+
+// ============================================================
+// MODELOS
+// ============================================================
+
+class WeightEntry {
+  final DateTime date;
+  final double weight;
+
+  WeightEntry({
+    required this.date,
+    required this.weight,
+  });
+
+  factory WeightEntry.fromJson(Map<String, dynamic> json) {
+    return WeightEntry(
+      date: DateTime.parse(json['date']),
+      weight: (json['weight'] as num).toDouble(),
+    );
+  }
+}
+
+class WorkoutStats {
+  final int totalWorkouts;
+  final int totalDuration;
+  final int totalCalories;
+  final int activeDays;
+  final int currentStreak;
+  final Map<String, int> workoutsByCategory;
+  final Map<String, int> muscleGroupFrequency;
+  final String favoriteExercise;
+  final int favoriteExerciseCount;
+  final double averageDuration;
+
+  WorkoutStats({
+    required this.totalWorkouts,
+    required this.totalDuration,
+    required this.totalCalories,
+    required this.activeDays,
+    required this.currentStreak,
+    required this.workoutsByCategory,
+    required this.muscleGroupFrequency,
+    required this.favoriteExercise,
+    required this.favoriteExerciseCount,
+    required this.averageDuration,
+  });
+
+  String get formattedTotalDuration {
+    final hours = (totalDuration / 60).floor();
+    final minutes = totalDuration % 60;
+    if (hours > 0) {
+      return '${hours}h${minutes > 0 ? minutes : ''}';
+    }
+    return '${minutes}min';
+  }
+
+  String get mostTrainedMuscleGroup {
+    if (muscleGroupFrequency.isEmpty) return 'Nenhum';
+    return muscleGroupFrequency.entries
+        .reduce((a, b) => a.value > b.value ? a : b)
+        .key;
+  }
+
+  factory WorkoutStats.fromJson(Map<String, dynamic> json) {
+    return WorkoutStats(
+      totalWorkouts: json['totalWorkouts'] ?? 0,
+      totalDuration: json['totalDuration'] ?? 0,
+      totalCalories: json['totalCalories'] ?? 0,
+      activeDays: json['activeDays'] ?? 0,
+      currentStreak: json['currentStreak'] ?? 0,
+      workoutsByCategory: Map<String, int>.from(json['workoutsByCategory'] ?? {}),
+      muscleGroupFrequency: Map<String, int>.from(json['muscleGroupFrequency'] ?? {}),
+      favoriteExercise: json['favoriteExercise'] ?? 'Nenhum',
+      favoriteExerciseCount: json['favoriteExerciseCount'] ?? 0,
+      averageDuration: (json['averageDuration'] ?? 0).toDouble(),
+    );
   }
 }

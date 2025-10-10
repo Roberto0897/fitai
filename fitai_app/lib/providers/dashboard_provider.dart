@@ -4,7 +4,7 @@ import '../models/workout_history_model.dart';
 import 'dart:convert';
 
 /// Provider para gerenciar dados do Dashboard
-/// ✨ ATUALIZADO: Integração completa com IA Gemini
+/// ✨ ATUALIZADO: Prioriza treinos gerados pela IA
 class DashboardProvider extends ChangeNotifier {
   // ============================================================
   // ESTADO
@@ -22,6 +22,9 @@ class DashboardProvider extends ChangeNotifier {
   Map<String, dynamic>? _recommendedWorkout;
   bool _isAIRecommendation = false; // Indica se veio da IA
   String? _aiRecommendationReason; // Motivo da recomendação
+  
+  // 🔥 NOVO: Flag para indicar se é treino GERADO pela IA (não apenas recomendado)
+  bool _isAIGeneratedWorkout = false;
   
   // Recomendação IA (mensagem motivacional)
   String? _aiMotivationalMessage;
@@ -49,6 +52,7 @@ class DashboardProvider extends ChangeNotifier {
   Map<String, dynamic>? get recommendedWorkout => _recommendedWorkout;
   bool get hasRecommendedWorkout => _recommendedWorkout != null;
   bool get isAIRecommendation => _isAIRecommendation;
+  bool get isAIGeneratedWorkout => _isAIGeneratedWorkout;
   String? get aiRecommendationReason => _aiRecommendationReason;
   
   // Recomendação IA
@@ -84,10 +88,15 @@ class DashboardProvider extends ChangeNotifier {
       // 2. Calcular estatísticas localmente
       _calculateStatistics();
       
-      // 3. Buscar treino recomendado (tenta IA primeiro, depois fallback)
-      await _loadRecommendedWorkoutWithAI();
+      // 3. 🔥 NOVO: Buscar último treino gerado pela IA PRIMEIRO
+      await _loadLastAIGeneratedWorkout();
       
-      // 4. Gerar recomendação IA motivacional (em paralelo, não bloqueia)
+      // 4. Se não houver treino da IA, buscar recomendado normal
+      if (_recommendedWorkout == null) {
+        await _loadRecommendedWorkoutWithAI();
+      }
+      
+      // 5. Gerar recomendação IA motivacional (em paralelo, não bloqueia)
       _loadAIMotivationalRecommendation();
       
       _error = null;
@@ -96,6 +105,7 @@ class DashboardProvider extends ChangeNotifier {
       debugPrint('   Total de treinos: $_totalWorkouts');
       debugPrint('   Dias ativos: $_activeDays');
       debugPrint('   Meta semanal: $_weeklyGoalPercentage%');
+      debugPrint('   Treino gerado pela IA: ${_isAIGeneratedWorkout ? "SIM" : "NÃO"}');
       debugPrint('   Recomendação IA: ${_isAIRecommendation ? "SIM" : "NÃO"}');
       
     } catch (e) {
@@ -105,6 +115,97 @@ class DashboardProvider extends ChangeNotifier {
     } finally {
       _isLoading = false;
       notifyListeners();
+    }
+  }
+  
+  // ============================================================
+  // 🔥 NOVO: BUSCAR ÚLTIMO TREINO GERADO PELA IA
+  // ============================================================
+  
+  /// Busca o último treino criado pela IA para o usuário
+  Future<void> _loadLastAIGeneratedWorkout() async {
+    try {
+      debugPrint('🤖 Buscando último treino gerado pela IA...');
+      
+      // Buscar todos os treinos do usuário
+      final response = await ApiService.getWorkouts();
+      
+      if (response['workouts'] == null || (response['workouts'] as List).isEmpty) {
+        debugPrint('ℹ️ Nenhum treino encontrado');
+        return;
+      }
+      
+      final allWorkouts = response['workouts'] as List;
+      
+      // 🔥 FILTRAR: Apenas treinos criados pela IA
+      final aiWorkouts = allWorkouts.where((workout) {
+        // ✅ Opção 1 (PRINCIPAL): Campo is_recommended do seu backend
+        if (workout['is_recommended'] == true) {
+          debugPrint('   ✓ Treino ${workout['name']} marcado com is_recommended');
+          return true;
+        }
+        
+        // ✅ Opção 2: Campo is_personalized (treinos personalizados do usuário)
+        if (workout['is_personalized'] == true) {
+          debugPrint('   ✓ Treino ${workout['name']} marcado com is_personalized');
+          return true;
+        }
+        
+        // ✅ Opção 3: Tem created_by_user (foi criado por um usuário específico)
+        if (workout['created_by_user'] != null) {
+          debugPrint('   ✓ Treino ${workout['name']} criado por usuário');
+          return true;
+        }
+        
+        // ✅ Opção 4: Descrição contém indicadores de IA
+        final description = (workout['description'] ?? '').toString().toLowerCase();
+        if (description.contains('gerado pela ia') ||
+            description.contains('gerado pela inteligência artificial') ||
+            description.contains('criado pela ia') ||
+            description.contains('personalizado pela ia') ||
+            description.contains('fitai')) {
+          debugPrint('   ✓ Treino ${workout['name']} com descrição de IA');
+          return true;
+        }
+        
+        return false;
+      }).toList();
+      
+      if (aiWorkouts.isEmpty) {
+        debugPrint('ℹ️ Nenhum treino gerado pela IA encontrado');
+        return;
+      }
+      
+      // Ordenar por data de criação (mais recente primeiro)
+      aiWorkouts.sort((a, b) {
+        try {
+          final dateA = DateTime.parse(a['created_at'] ?? '');
+          final dateB = DateTime.parse(b['created_at'] ?? '');
+          return dateB.compareTo(dateA);
+        } catch (e) {
+          return 0;
+        }
+      });
+      
+      // Pegar o mais recente
+      final lastAIWorkout = aiWorkouts.first;
+      
+      // Buscar detalhes completos do treino
+      final workoutId = lastAIWorkout['id'];
+      final workoutDetails = await ApiService.getWorkoutDetail(workoutId);
+      
+      _recommendedWorkout = workoutDetails;
+      _isAIGeneratedWorkout = true;
+      _isAIRecommendation = true;
+      _aiRecommendationReason = 'Último treino gerado pela IA para você';
+      
+      debugPrint('✅ Último treino da IA encontrado: ${_recommendedWorkout!['name']}');
+      debugPrint('   ID: $workoutId');
+      debugPrint('   Criado em: ${lastAIWorkout['created_at']}');
+      
+    } catch (e) {
+      debugPrint('⚠️ Erro ao buscar treino da IA: $e');
+      // Não definir _recommendedWorkout = null aqui, deixa tentar o fallback
     }
   }
   
@@ -204,16 +305,15 @@ class DashboardProvider extends ChangeNotifier {
   }
   
   // ============================================================
-  // 🤖 BUSCAR TREINO RECOMENDADO COM IA
+  // 🤖 BUSCAR TREINO RECOMENDADO COM IA (FALLBACK)
   // ============================================================
   
   /// Tenta buscar recomendação da IA, com fallback para endpoint normal
   Future<void> _loadRecommendedWorkoutWithAI() async {
     try {
-      debugPrint('🤖 Tentando buscar recomendação da IA...');
+      debugPrint('🤖 Tentando buscar recomendação da IA (fallback)...');
       
       // 🔥 PRIMEIRO: Tentar recomendações de exercícios da IA
-      // A IA usa automaticamente as características do perfil do usuário (goal, activity_level, etc)
       try {
         final aiResponse = await ApiService.getAIExerciseRecommendations();
         
@@ -229,13 +329,13 @@ class DashboardProvider extends ChangeNotifier {
             final workoutDetails = await ApiService.getWorkoutDetail(workoutId);
             
             _recommendedWorkout = workoutDetails;
+            _isAIGeneratedWorkout = false; // É recomendado, não gerado
             _isAIRecommendation = true;
             _aiRecommendationReason = firstRecommendation['reason'] ?? 
                                       'Recomendado com base no seu perfil';
             
             debugPrint('✅ Treino recomendado pela IA: ${_recommendedWorkout!['name']}');
             debugPrint('   Motivo: $_aiRecommendationReason');
-            debugPrint('   Confiança: ${firstRecommendation['confidence_score'] ?? "N/A"}');
             
             return;
           }
@@ -251,6 +351,7 @@ class DashboardProvider extends ChangeNotifier {
       
       if (response['workouts'] != null && (response['workouts'] as List).isNotEmpty) {
         _recommendedWorkout = (response['workouts'] as List).first;
+        _isAIGeneratedWorkout = false;
         _isAIRecommendation = false;
         _aiRecommendationReason = null;
         debugPrint('✅ Treino recomendado (backend): ${_recommendedWorkout!['name']}');
@@ -276,6 +377,7 @@ class DashboardProvider extends ChangeNotifier {
           
           if (differentWorkouts.isNotEmpty) {
             _recommendedWorkout = differentWorkouts.first;
+            _isAIGeneratedWorkout = false;
             _isAIRecommendation = false;
             _aiRecommendationReason = null;
             debugPrint('✅ Treino diferente recomendado: ${_recommendedWorkout!['name']}');
@@ -285,6 +387,7 @@ class DashboardProvider extends ChangeNotifier {
           // Se não encontrar diferente, pega qualquer um
           if (allWorkouts.isNotEmpty) {
             _recommendedWorkout = allWorkouts.first;
+            _isAIGeneratedWorkout = false;
             _isAIRecommendation = false;
             _aiRecommendationReason = null;
             debugPrint('✅ Treino padrão recomendado: ${_recommendedWorkout!['name']}');
@@ -295,12 +398,14 @@ class DashboardProvider extends ChangeNotifier {
       
       debugPrint('ℹ️ Nenhum treino recomendado disponível');
       _recommendedWorkout = null;
+      _isAIGeneratedWorkout = false;
       _isAIRecommendation = false;
       _aiRecommendationReason = null;
       
     } catch (e) {
       debugPrint('⚠️ Erro ao buscar treino recomendado: $e');
       _recommendedWorkout = null;
+      _isAIGeneratedWorkout = false;
       _isAIRecommendation = false;
       _aiRecommendationReason = null;
     }
@@ -310,8 +415,6 @@ class DashboardProvider extends ChangeNotifier {
   // 🤖 GERAR RECOMENDAÇÃO MOTIVACIONAL COM IA
   // ============================================================
   
-  /// Gera mensagem motivacional personalizada usando IA
-  /// Roda em paralelo, não bloqueia o carregamento do dashboard
   Future<void> _loadAIMotivationalRecommendation() async {
     _isLoadingAIRecommendation = true;
     notifyListeners();
@@ -325,38 +428,45 @@ class DashboardProvider extends ChangeNotifier {
         final now = DateTime.now();
         _daysSinceLastWorkout = now.difference(lastWorkout.date).inDays;
       } else {
-        _daysSinceLastWorkout = 999; // Nenhum treino ainda
+        _daysSinceLastWorkout = 999;
       }
       
-      // Tentar obter mensagem da IA
-      // O backend automaticamente usa o perfil do usuário (goal, activity_level, etc)
       try {
-        // Determinar contexto baseado nos dias
-        String context = 'workout_start';
-        if (_daysSinceLastWorkout == 0) {
-          context = 'workout_completed';
-        } else if (_daysSinceLastWorkout! > 7) {
-          context = 'comeback_motivation';
-        }
-        
         final aiResponse = await ApiService.getAIExerciseRecommendations();
         
-        // A IA pode retornar uma mensagem motivacional
+        String? motivationalText;
+        
         if (aiResponse['motivational_message'] != null) {
-          _aiMotivationalMessage = aiResponse['motivational_message'];
-          debugPrint('✅ Mensagem motivacional da IA recebida');
+          motivationalText = aiResponse['motivational_message'];
+        } else if (aiResponse['next_steps'] != null && 
+                 aiResponse['next_steps']['suggestion'] != null) {
+          final suggestion = aiResponse['next_steps']['suggestion'];
+          final focus = aiResponse['next_steps']['focus'];
+          
+          if (focus != null) {
+            motivationalText = '$suggestion - $focus';
+          } else {
+            motivationalText = suggestion;
+          }
+        } else if (aiResponse['ai_recommendations'] != null &&
+                 aiResponse['ai_recommendations']['recommendation_strategy'] != null) {
+          motivationalText = aiResponse['ai_recommendations']['recommendation_strategy'];
+        }
+        
+        if (motivationalText != null && motivationalText.isNotEmpty) {
+          _aiMotivationalMessage = motivationalText;
+          debugPrint('✅ Mensagem motivacional da IA: $_aiMotivationalMessage');
         } else {
-          // Fallback: gerar localmente baseado no histórico
           _generateLocalMotivationalMessage();
         }
         
       } catch (aiError) {
-        debugPrint('⚠️ IA não disponível para mensagem motivacional: $aiError');
+        debugPrint('⚠️ IA não disponível: $aiError');
         _generateLocalMotivationalMessage();
       }
       
     } catch (e) {
-      debugPrint('❌ Erro ao gerar recomendação motivacional: $e');
+      debugPrint('❌ Erro ao gerar recomendação: $e');
       _generateLocalMotivationalMessage();
     } finally {
       _isLoadingAIRecommendation = false;
@@ -364,58 +474,36 @@ class DashboardProvider extends ChangeNotifier {
     }
   }
   
-  /// Gera mensagem motivacional localmente (fallback)
   void _generateLocalMotivationalMessage() {
-    debugPrint('🤖 Gerando mensagem motivacional local (fallback)...');
-    
     if (_workoutHistory.isEmpty) {
       _aiMotivationalMessage = '🚀 Comece sua jornada fitness hoje!';
       _daysSinceLastWorkout = 0;
       return;
     }
 
-    // Gerar mensagem baseada nos dias
     if (_daysSinceLastWorkout == 0) {
       _aiMotivationalMessage = '🔥 Ótimo! Você já treinou hoje!';
     } else if (_daysSinceLastWorkout == 1) {
-      _aiMotivationalMessage = '💪 Continue consistente! Seu próximo treino está pronto.';
+      _aiMotivationalMessage = '💪 Continue consistente!';
     } else if (_daysSinceLastWorkout! <= 3) {
       _aiMotivationalMessage = '⏰ Hora de voltar aos treinos!';
     } else if (_daysSinceLastWorkout! <= 7) {
-      _aiMotivationalMessage = '👋 Sentimos sua falta! Vamos treinar?';
+      _aiMotivationalMessage = '👋 Sentimos sua falta!';
     } else {
-      _aiMotivationalMessage = '🌟 Vamos recomeçar sua jornada fitness?';
+      _aiMotivationalMessage = '🌟 Vamos recomeçar?';
     }
-
-    // Adicionar recomendação de grupo muscular baseado no último treino
-    if (_workoutHistory.isNotEmpty && _workoutHistory.first.muscleGroups.isNotEmpty) {
-      final lastMuscle = _workoutHistory.first.muscleGroups.first.toLowerCase();
-      
-      if (lastMuscle.contains('peito') || lastMuscle.contains('peitoral')) {
-        _aiMotivationalMessage = '$_aiMotivationalMessage Foque em pernas ou costas hoje.';
-      } else if (lastMuscle.contains('perna') || lastMuscle.contains('coxa')) {
-        _aiMotivationalMessage = '$_aiMotivationalMessage Que tal treinar superiores hoje?';
-      } else if (lastMuscle.contains('costa') || lastMuscle.contains('costas')) {
-        _aiMotivationalMessage = '$_aiMotivationalMessage Recomendo treino de pernas ou peito.';
-      } else if (lastMuscle.contains('braço') || lastMuscle.contains('biceps')) {
-        _aiMotivationalMessage = '$_aiMotivationalMessage Foque em grupos musculares maiores hoje.';
-      }
-    }
-
-    debugPrint('🤖 Mensagem local: $_aiMotivationalMessage');
-    debugPrint('📅 Dias desde último treino: $_daysSinceLastWorkout');
   }
   
   // ============================================================
   // HELPERS
   // ============================================================
   
-  /// Define valores padrão em caso de erro
   void _setDefaultValues() {
     _totalWorkouts = 0;
     _activeDays = 0;
     _weeklyGoalPercentage = 0.0;
     _recommendedWorkout = null;
+    _isAIGeneratedWorkout = false;
     _isAIRecommendation = false;
     _aiRecommendationReason = null;
     _aiMotivationalMessage = 'Não foi possível carregar recomendações';
@@ -423,52 +511,32 @@ class DashboardProvider extends ChangeNotifier {
     _workoutHistory = [];
   }
   
-  /// Limpa todos os dados
   void clear() {
-    _totalWorkouts = 0;
-    _activeDays = 0;
-    _weeklyGoalPercentage = 0.0;
-    _recommendedWorkout = null;
-    _isAIRecommendation = false;
-    _aiRecommendationReason = null;
-    _aiMotivationalMessage = null;
-    _daysSinceLastWorkout = null;
-    _workoutHistory = [];
+    _setDefaultValues();
     _error = null;
     notifyListeners();
   }
   
-  /// Atualiza apenas as estatísticas (refresh rápido)
   Future<void> refreshStatistics() async {
     try {
-      debugPrint('🔄 Atualizando estatísticas...');
       await _loadWorkoutHistory();
       _calculateStatistics();
       _generateLocalMotivationalMessage();
       notifyListeners();
     } catch (e) {
-      debugPrint('❌ Erro ao atualizar estatísticas: $e');
+      debugPrint('❌ Erro ao atualizar: $e');
     }
   }
   
-  /// Atualiza apenas o treino recomendado (força nova busca da IA)
   Future<void> refreshRecommendedWorkout() async {
     try {
-      debugPrint('🔄 Atualizando treino recomendado...');
-      await _loadRecommendedWorkoutWithAI();
+      await _loadLastAIGeneratedWorkout();
+      if (_recommendedWorkout == null) {
+        await _loadRecommendedWorkoutWithAI();
+      }
       notifyListeners();
     } catch (e) {
-      debugPrint('❌ Erro ao atualizar treino recomendado: $e');
-    }
-  }
-  
-  /// Atualiza recomendação motivacional (força nova geração da IA)
-  Future<void> refreshMotivationalMessage() async {
-    try {
-      debugPrint('🔄 Atualizando mensagem motivacional...');
-      await _loadAIMotivationalRecommendation();
-    } catch (e) {
-      debugPrint('❌ Erro ao atualizar mensagem motivacional: $e');
+      debugPrint('❌ Erro: $e');
     }
   }
   
@@ -476,7 +544,6 @@ class DashboardProvider extends ChangeNotifier {
   // MÉTODOS AUXILIARES PARA UI
   // ============================================================
   
-  /// Retorna informações do treino recomendado de forma segura
   String getRecommendedWorkoutName() {
     return _recommendedWorkout?['name'] ?? 'Nenhum treino disponível';
   }
@@ -496,7 +563,6 @@ class DashboardProvider extends ChangeNotifier {
   String getRecommendedWorkoutDifficulty() {
     final difficulty = _recommendedWorkout?['difficulty_level'] ?? 'beginner';
     
-    // Traduzir para português
     switch (difficulty.toString().toLowerCase()) {
       case 'beginner':
         return 'Iniciante';
@@ -509,9 +575,10 @@ class DashboardProvider extends ChangeNotifier {
     }
   }
   
-  /// Badge de recomendação IA (para mostrar na UI)
   String getRecommendationBadge() {
-    if (_isAIRecommendation) {
+    if (_isAIGeneratedWorkout) {
+      return '🤖 Gerado pela IA';
+    } else if (_isAIRecommendation) {
       return '🤖 Recomendado pela IA';
     }
     return '';
