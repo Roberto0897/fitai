@@ -8,28 +8,32 @@ class ApiService {
   // CONFIGURAÇÃO DA URL BASE
   // ============================================================
   
-  // DESENVOLVIMENTO - Ajuste conforme seu ambiente:
-  // Android Emulator: 'http://10.0.2.2:8000'
-  // iOS Simulator: 'http://localhost:8000' ou 'http://127.0.0.1:8000'
-  // Dispositivo físico: 'http://SEU_IP_LOCAL:8000' (ex: 'http://192.168.1.100:8000')
-  // Web: 'http://localhost:8000'
-  
   static const String _baseUrl = 'http://localhost:8000'; 
-  
-  // PRODUÇÃO: Descomente e ajuste quando for fazer deploy
-  // static const String _baseUrl = 'https://api.seudominio.com';
-  
   static const String _apiVersion = '/api/v1';
   
   // Firebase Auth instance
   static final FirebaseAuth _auth = FirebaseAuth.instance;
   
   // ============================================================
-  // OBTER TOKEN FIREBASE
+  // 🔥 CACHE DE TOKEN (NOVO)
   // ============================================================
   
-  /// Obtém o ID Token do usuário autenticado no Firebase
-  static Future<String?> _getFirebaseToken() async {
+  static String? _cachedToken;
+  static DateTime? _tokenExpiry;
+  
+  /// Limpa cache de token
+  static void clearTokenCache() {
+    _cachedToken = null;
+    _tokenExpiry = null;
+    print('🗑️ Cache de token limpo');
+  }
+  
+  // ============================================================
+  // 🔥 OBTER TOKEN COM CACHE E RENOVAÇÃO AUTOMÁTICA (MELHORADO)
+  // ============================================================
+  
+  /// Obtém token válido (usa cache se disponível)
+  static Future<String?> _getFirebaseToken({bool forceRefresh = false}) async {
     try {
       final user = _auth.currentUser;
       if (user == null) {
@@ -37,23 +41,39 @@ class ApiService {
         return null;
       }
       
-      print('👤 Usuário logado: ${user.email} (${user.uid})');
+      final now = DateTime.now();
       
-      // Obter ID Token (força refresh se necessário)
-      final token = await user.getIdToken(true);
+      // 🔥 Se tem cache válido por mais de 5 minutos, usar
+      if (!forceRefresh && 
+          _cachedToken != null && 
+          _tokenExpiry != null && 
+          _tokenExpiry!.isAfter(now.add(Duration(minutes: 5)))) {
+        print('✅ Usando token em cache (válido por ${_tokenExpiry!.difference(now).inMinutes} min)');
+        return _cachedToken;
+      }
+      
+      print('🔄 Renovando token Firebase...');
+      
+      // Obter novo token
+      final token = await user.getIdToken(true); // true = force refresh
       
       if (token == null) {
         print('⚠️ Não foi possível obter token do Firebase');
         return null;
       }
       
-      print('✅ Token Firebase obtido com sucesso (${token.length} caracteres)');
-      print('🔑 Primeiros 50 caracteres: ${token.substring(0, 50)}...');
+      // Atualizar cache (tokens do Firebase duram 1 hora)
+      _cachedToken = token;
+      _tokenExpiry = now.add(Duration(minutes: 55)); // 5 min de margem
+      
+      print('✅ Token renovado (${token.length} chars)');
+      print('🔑 Expira em: ${_tokenExpiry!.toIso8601String()}');
       
       return token;
       
     } catch (e) {
       print('❌ Erro ao obter token Firebase: $e');
+      clearTokenCache();
       return null;
     }
   }
@@ -63,8 +83,8 @@ class ApiService {
   // ============================================================
   
   /// Headers padrão para requisições autenticadas
-  static Future<Map<String, String>> _getHeaders() async {
-    final token = await _getFirebaseToken();
+  static Future<Map<String, String>> _getHeaders({bool forceRefresh = false}) async {
+    final token = await _getFirebaseToken(forceRefresh: forceRefresh);
     
     final headers = {
       'Content-Type': 'application/json',
@@ -92,19 +112,36 @@ class ApiService {
   }
   
   // ============================================================
-  // MÉTODOS HTTP GENÉRICOS
+  // 🔥 MÉTODOS HTTP COM RETRY AUTOMÁTICO (MELHORADO)
   // ============================================================
   
-  /// GET - Buscar dados
-  static Future<dynamic> get(String endpoint, {bool requireAuth = true}) async {
+  /// GET - Buscar dados (com retry)
+  static Future<dynamic> get(
+    String endpoint, 
+    {bool requireAuth = true, int retryCount = 0}
+  ) async {
     try {
       final url = Uri.parse('$_baseUrl$_apiVersion$endpoint');
-      final headers = requireAuth ? await _getHeaders() : _getPublicHeaders();
+      final headers = requireAuth 
+          ? await _getHeaders(forceRefresh: retryCount > 0) 
+          : _getPublicHeaders();
       
       print('📡 GET: $url');
       print('🔐 Requer autenticação: $requireAuth');
       
       final response = await http.get(url, headers: headers);
+      
+      // 🔥 Se 403 e ainda tem retry, tentar novamente
+      if (response.statusCode == 403 && retryCount < 2 && requireAuth) {
+        print('⚠️ 403 Forbidden - Token inválido, renovando... (retry ${retryCount + 1}/2)');
+        
+        // Limpar cache e esperar um pouco
+        clearTokenCache();
+        await Future.delayed(Duration(milliseconds: 500));
+        
+        // Retry recursivo
+        return await get(endpoint, requireAuth: requireAuth, retryCount: retryCount + 1);
+      }
       
       return _handleResponse(response);
       
@@ -114,15 +151,17 @@ class ApiService {
     }
   }
   
-  /// POST - Enviar dados
+  /// POST - Enviar dados (com retry)
   static Future<dynamic> post(
     String endpoint, 
     Map<String, dynamic> data, 
-    {bool requireAuth = true}
+    {bool requireAuth = true, int retryCount = 0}
   ) async {
     try {
       final url = Uri.parse('$_baseUrl$_apiVersion$endpoint');
-      final headers = requireAuth ? await _getHeaders() : _getPublicHeaders();
+      final headers = requireAuth 
+          ? await _getHeaders(forceRefresh: retryCount > 0)
+          : _getPublicHeaders();
       
       print('📡 POST: $url');
       print('📦 Body: $data');
@@ -133,6 +172,16 @@ class ApiService {
         body: jsonEncode(data),
       );
       
+      // 🔥 Retry em 403
+      if (response.statusCode == 403 && retryCount < 2 && requireAuth) {
+        print('⚠️ 403 Forbidden - Renovando token... (retry ${retryCount + 1}/2)');
+        
+        clearTokenCache();
+        await Future.delayed(Duration(milliseconds: 500));
+        
+        return await post(endpoint, data, requireAuth: requireAuth, retryCount: retryCount + 1);
+      }
+      
       return _handleResponse(response);
       
     } catch (e) {
@@ -141,15 +190,17 @@ class ApiService {
     }
   }
   
-  /// PUT - Atualizar dados
+  /// PUT - Atualizar dados (com retry)
   static Future<dynamic> put(
     String endpoint, 
     Map<String, dynamic> data,
-    {bool requireAuth = true}
+    {bool requireAuth = true, int retryCount = 0}
   ) async {
     try {
       final url = Uri.parse('$_baseUrl$_apiVersion$endpoint');
-      final headers = requireAuth ? await _getHeaders() : _getPublicHeaders();
+      final headers = requireAuth 
+          ? await _getHeaders(forceRefresh: retryCount > 0)
+          : _getPublicHeaders();
       
       print('📡 PUT: $url');
       
@@ -159,6 +210,16 @@ class ApiService {
         body: jsonEncode(data),
       );
       
+      // 🔥 Retry em 403
+      if (response.statusCode == 403 && retryCount < 2 && requireAuth) {
+        print('⚠️ 403 Forbidden - Renovando token... (retry ${retryCount + 1}/2)');
+        
+        clearTokenCache();
+        await Future.delayed(Duration(milliseconds: 500));
+        
+        return await put(endpoint, data, requireAuth: requireAuth, retryCount: retryCount + 1);
+      }
+      
       return _handleResponse(response);
       
     } catch (e) {
@@ -167,15 +228,30 @@ class ApiService {
     }
   }
   
-  /// DELETE - Remover dados
-  static Future<dynamic> delete(String endpoint, {bool requireAuth = true}) async {
+  /// DELETE - Remover dados (com retry)
+  static Future<dynamic> delete(
+    String endpoint, 
+    {bool requireAuth = true, int retryCount = 0}
+  ) async {
     try {
       final url = Uri.parse('$_baseUrl$_apiVersion$endpoint');
-      final headers = requireAuth ? await _getHeaders() : _getPublicHeaders();
+      final headers = requireAuth 
+          ? await _getHeaders(forceRefresh: retryCount > 0)
+          : _getPublicHeaders();
       
       print('📡 DELETE: $url');
       
       final response = await http.delete(url, headers: headers);
+      
+      // 🔥 Retry em 403
+      if (response.statusCode == 403 && retryCount < 2 && requireAuth) {
+        print('⚠️ 403 Forbidden - Renovando token... (retry ${retryCount + 1}/2)');
+        
+        clearTokenCache();
+        await Future.delayed(Duration(milliseconds: 500));
+        
+        return await delete(endpoint, requireAuth: requireAuth, retryCount: retryCount + 1);
+      }
       
       return _handleResponse(response);
       
@@ -219,6 +295,17 @@ class ApiService {
   }
   
   // ============================================================
+  // 🔥 MÉTODO PARA FORÇAR RENOVAÇÃO MANUAL (NOVO)
+  // ============================================================
+  
+  /// Força renovação do token (útil após login/logout)
+  static Future<void> refreshToken() async {
+    print('🔄 Forçando renovação de token...');
+    clearTokenCache();
+    await _getFirebaseToken(forceRefresh: true);
+  }
+  
+  // ============================================================
   // ENDPOINTS ESPECÍFICOS - WORKOUTS
   // ============================================================
   
@@ -238,12 +325,11 @@ class ApiService {
   }
   
   /// Iniciar sessão de treino
- /// ✅ CORRIGIDO: Iniciar sessão COM verificação prévia
   static Future<Map<String, dynamic>> startWorkoutSession(int workoutId) async {
     try {
       print('🏁 Tentando iniciar sessão para workout $workoutId...');
       
-      // ✅ PASSO 1: Verificar se já existe sessão ativa
+      // Verificar se já existe sessão ativa
       final activeSession = await getActiveSession();
       
       if (activeSession != null) {
@@ -254,7 +340,6 @@ class ApiService {
         print('   Session ID: $sessionId');
         print('   Workout: $workoutName');
         
-        // ✅ Lançar exceção específica com dados da sessão
         throw ActiveSessionException(
           sessionId: sessionId,
           workoutName: workoutName,
@@ -263,7 +348,6 @@ class ApiService {
         );
       }
       
-      // ✅ PASSO 2: Iniciar nova sessão
       print('✅ Nenhuma sessão ativa, iniciando nova sessão...');
       final response = await post('/workouts/$workoutId/start/', {});
       
@@ -278,54 +362,53 @@ class ApiService {
     }
   }
   
-  // ✅ CORRIGIDO: Completar sessão de treino
-static Future<Map<String, dynamic>> completeWorkoutSession({
-  int? sessionId,
-  int? userRating,
-  int? caloriesBurned,
-  String? notes,
-}) async {
-  try {
-    int? finalSessionId = sessionId;
-    
-    if (finalSessionId == null) {
-      print('🔍 SessionId não fornecido, buscando sessão ativa...');
-      final activeSession = await getActiveSession();
+  /// Completar sessão de treino
+  static Future<Map<String, dynamic>> completeWorkoutSession({
+    int? sessionId,
+    int? userRating,
+    int? caloriesBurned,
+    String? notes,
+  }) async {
+    try {
+      int? finalSessionId = sessionId;
       
-      if (activeSession == null || activeSession['active_session_id'] == null) {
-        throw Exception('Nenhuma sessão ativa encontrada para finalizar');
+      if (finalSessionId == null) {
+        print('🔍 SessionId não fornecido, buscando sessão ativa...');
+        final activeSession = await getActiveSession();
+        
+        if (activeSession == null || activeSession['active_session_id'] == null) {
+          throw Exception('Nenhuma sessão ativa encontrada para finalizar');
+        }
+        
+        finalSessionId = activeSession['active_session_id'];
       }
       
-      finalSessionId = activeSession['active_session_id'];
+      print('🏁 Finalizando sessão $finalSessionId no backend...');
+      print('   Rating: $userRating');
+      print('   Calorias: $caloriesBurned');
+      print('   Notas: $notes');
+      
+      final response = await post(
+        '/workouts/sessions/$finalSessionId/complete/',
+        {
+          if (userRating != null) 'user_rating': userRating,
+          if (caloriesBurned != null) 'calories_burned': caloriesBurned,
+          if (notes != null && notes.isNotEmpty) 'notes': notes,
+        },
+      );
+      
+      print('✅ Sessão $finalSessionId finalizada com sucesso!');
+      print('📊 Resposta do backend: $response');
+      
+      return response;
+      
+    } catch (e) {
+      print('❌ Erro ao finalizar sessão: $e');
+      rethrow;
     }
-    
-    print('🏁 Finalizando sessão $finalSessionId no backend...');
-    print('   Rating: $userRating');
-    print('   Calorias: $caloriesBurned');
-    print('   Notas: $notes');
-    
-    // ✅ MUDANÇA: Usar a rota com session_id na URL
-    final response = await post(
-      '/workouts/sessions/$finalSessionId/complete/',
-      {
-        if (userRating != null) 'user_rating': userRating,
-        if (caloriesBurned != null) 'calories_burned': caloriesBurned,
-        if (notes != null && notes.isNotEmpty) 'notes': notes,
-      },
-    );
-    
-    print('✅ Sessão $finalSessionId finalizada com sucesso!');
-    print('📊 Resposta do backend: $response');
-    
-    return response;
-    
-  } catch (e) {
-    print('❌ Erro ao finalizar sessão: $e');
-    rethrow;
   }
-}
   
-  /// ✅ CORRIGIDO: Buscar sessão ativa
+  /// Buscar sessão ativa
   static Future<Map<String, dynamic>?> getActiveSession() async {
     try {
       print('🔍 Buscando sessão ativa...');
@@ -342,26 +425,26 @@ static Future<Map<String, dynamic>> completeWorkoutSession({
     }
   }
   
- static Future<Map<String, dynamic>> cancelActiveSession(int sessionId) async {
-  try {
-    print('🗑️ Cancelando sessão $sessionId...');
-    
-    // ✅ Usar POST em vez de DELETE
-    final response = await post(
-      '/workouts/sessions/$sessionId/cancel/',
-      {},  // body vazio
-    );
-    
-    print('✅ Sessão cancelada com sucesso');
-    return response;
-    
-  } catch (e) {
-    print('❌ Erro ao cancelar sessão: $e');
-    rethrow;
+  /// Cancelar sessão ativa
+  static Future<Map<String, dynamic>> cancelActiveSession(int sessionId) async {
+    try {
+      print('🗑️ Cancelando sessão $sessionId...');
+      
+      final response = await post(
+        '/workouts/sessions/$sessionId/cancel/',
+        {},
+      );
+      
+      print('✅ Sessão cancelada com sucesso');
+      return response;
+      
+    } catch (e) {
+      print('❌ Erro ao cancelar sessão: $e');
+      rethrow;
+    }
   }
-}
   
-  /// ✅ NOVO: Método auxiliar para lidar com sessão travada
+  /// Método auxiliar para lidar com sessão travada
   static Future<void> handleStuckSession() async {
     try {
       print('🔧 Tentando resolver sessão travada...');
@@ -394,6 +477,7 @@ static Future<Map<String, dynamic>> completeWorkoutSession({
       rethrow;
     }
   }
+  
   /// Histórico de treinos
   static Future<Map<String, dynamic>> getWorkoutHistory() async {
     return await get('/workouts/sessions/history/');
@@ -432,10 +516,8 @@ static Future<Map<String, dynamic>> completeWorkoutSession({
     return await get('/users/dashboard/');
   }
   
-   /// Busca o perfil completo do usuário (substitui o dashboard) //NOVO 04/10 /17:07
+  /// Busca o perfil completo do usuário
   static Future<Map<String, dynamic>> getUserProfile() async {
-    // Usamos o endpoint que mapeamos no Django para o UserProfileUpdateView
-    // O Django usa o token para saber qual perfil retornar
     return await get('/users/profile/'); 
   }
 
@@ -451,7 +533,7 @@ static Future<Map<String, dynamic>> completeWorkoutSession({
   
   /// Analytics do usuário
   static Future<Map<String, dynamic>> getUserAnalytics() async {
-    return await get('users/analytics/');
+    return await get('/users/analytics/');
   }
   
   // ============================================================
@@ -477,32 +559,32 @@ static Future<Map<String, dynamic>> completeWorkoutSession({
   }
   
   /// Listar apenas MEUS treinos personalizados
-static Future<Map<String, dynamic>> getMyWorkouts() async {
-  return await get('/workouts/my-workouts/');
-}
+  static Future<Map<String, dynamic>> getMyWorkouts() async {
+    return await get('/workouts/my-workouts/');
+  }
 
-/// Criar novo treino personalizado
-static Future<Map<String, dynamic>> createWorkout({
-  required String name,
-  required String description,
-  String? difficultyLevel,
-  int? estimatedDuration,
-  String? targetMuscleGroups,
-  String? equipmentNeeded,
-  int? caloriesEstimate,
-  String? workoutType,
-}) async {
-  return await post('/workouts/create/', {
-    'name': name,
-    'description': description,
-    if (difficultyLevel != null) 'difficulty_level': difficultyLevel,
-    if (estimatedDuration != null) 'estimated_duration': estimatedDuration,
-    if (targetMuscleGroups != null) 'target_muscle_groups': targetMuscleGroups,
-    if (equipmentNeeded != null) 'equipment_needed': equipmentNeeded,
-    if (caloriesEstimate != null) 'calories_estimate': caloriesEstimate,
-    if (workoutType != null) 'workout_type': workoutType,
-  });
-}
+  /// Criar novo treino personalizado
+  static Future<Map<String, dynamic>> createWorkout({
+    required String name,
+    required String description,
+    String? difficultyLevel,
+    int? estimatedDuration,
+    String? targetMuscleGroups,
+    String? equipmentNeeded,
+    int? caloriesEstimate,
+    String? workoutType,
+  }) async {
+    return await post('/workouts/create/', {
+      'name': name,
+      'description': description,
+      if (difficultyLevel != null) 'difficulty_level': difficultyLevel,
+      if (estimatedDuration != null) 'estimated_duration': estimatedDuration,
+      if (targetMuscleGroups != null) 'target_muscle_groups': targetMuscleGroups,
+      if (equipmentNeeded != null) 'equipment_needed': equipmentNeeded,
+      if (caloriesEstimate != null) 'calories_estimate': caloriesEstimate,
+      if (workoutType != null) 'workout_type': workoutType,
+    });
+  }
 
   /// Atualizar treino personalizado
   static Future<Map<String, dynamic>> updateWorkout(
@@ -550,111 +632,113 @@ static Future<Map<String, dynamic>> createWorkout({
   /// Duplicar treino (criar cópia personalizada)
   static Future<Map<String, dynamic>> duplicateWorkout(int workoutId) async {
     return await post('/workouts/$workoutId/duplicate/', {});
-}
+  }
 
-// ============================================================
-// ENDPOINTS ESPECÍFICOS - CHATBOT
-// ============================================================
+  // ============================================================
+  // ENDPOINTS ESPECÍFICOS - CHATBOT
+  // ============================================================
 
-/// Testar API do chatbot
-static Future<Map<String, dynamic>> testChatbotAPI() async {
-  return await get('/chat/test/');
-}
+  /// Testar API do chatbot
+  static Future<Map<String, dynamic>> testChatbotAPI() async {
+    return await get('/chat/test/');
+  }
 
-/// Iniciar nova conversa
-static Future<Map<String, dynamic>> startConversation({
-  String conversationType = 'general_fitness',
-  String? initialMessage,
-  bool forceNew = false,
-}) async {
-  return await post('/chat/conversations/start/', {
-    'type': conversationType,
-    if (initialMessage != null) 'message': initialMessage,
-    'force_new': forceNew,
-  });
-}
+  /// Iniciar nova conversa
+  static Future<Map<String, dynamic>> startConversation({
+    String conversationType = 'general_fitness',
+    String? initialMessage,
+    bool forceNew = false,
+  }) async {
+    return await post('/chat/conversations/start/', {
+      'type': conversationType,
+      if (initialMessage != null) 'message': initialMessage,
+      'force_new': forceNew,
+    });
+  }
 
-/// Enviar mensagem em conversa
-static Future<Map<String, dynamic>> sendChatMessage({
-  required int conversationId,
-  required String message,
-  String? contextHint,
-}) async {
-  return await post('/chat/conversations/$conversationId/message/', {
-    'message': message,
-    if (contextHint != null) 'context_hint': contextHint,
-  });
-}
+  /// Enviar mensagem em conversa
+  static Future<Map<String, dynamic>> sendChatMessage({
+    required int conversationId,
+    required String message,
+    String? contextHint,
+  }) async {
+    return await post('/chat/conversations/$conversationId/message/', {
+      'message': message,
+      if (contextHint != null) 'context_hint': contextHint,
+    });
+  }
 
-/// Buscar histórico da conversa
-static Future<Map<String, dynamic>> getConversationHistory({
-  required int conversationId,
-  int limit = 50,
-  int offset = 0,
-  bool includeContext = false,
-}) async {
-  return await get(
-    '/chat/conversations/$conversationId/history/?limit=$limit&offset=$offset&include_context=$includeContext'
-  );
-}
+  /// Buscar histórico da conversa
+  static Future<Map<String, dynamic>> getConversationHistory({
+    required int conversationId,
+    int limit = 50,
+    int offset = 0,
+    bool includeContext = false,
+  }) async {
+    return await get(
+      '/chat/conversations/$conversationId/history/?limit=$limit&offset=$offset&include_context=$includeContext'
+    );
+  }
 
-/// Listar todas conversas do usuário
-static Future<Map<String, dynamic>> getUserConversations({
-  String status = 'all',
-  String type = 'all',
-  int days = 30,
-  int limit = 20,
-  int offset = 0,
-}) async {
-  return await get(
-    '/chat/conversations/?status=$status&type=$type&days=$days&limit=$limit&offset=$offset'
-  );
-}
+  /// Listar todas conversas do usuário
+  static Future<Map<String, dynamic>> getUserConversations({
+    String status = 'all',
+    String type = 'all',
+    int days = 30,
+    int limit = 20,
+    int offset = 0,
+  }) async {
+    return await get(
+      '/chat/conversations/?status=$status&type=$type&days=$days&limit=$limit&offset=$offset'
+    );
+  }
 
-/// Finalizar conversa
-static Future<Map<String, dynamic>> endConversation({
-  required int conversationId,
-  double? rating,
-  String? feedback,
-}) async {
-  return await post('/chat/conversations/$conversationId/end/', {
-    if (rating != null) 'rating': rating,
-    if (feedback != null) 'feedback': feedback,
-  });
-}
+  /// Finalizar conversa
+  static Future<Map<String, dynamic>> endConversation({
+    required int conversationId,
+    double? rating,
+    String? feedback,
+  }) async {
+    return await post('/chat/conversations/$conversationId/end/', {
+      if (rating != null) 'rating': rating,
+      if (feedback != null) 'feedback': feedback,
+    });
+  }
 
-/// Dar feedback em mensagem específica
-static Future<Map<String, dynamic>> sendMessageFeedback({
-  required int messageId,
-  required String reaction, // 'helpful', 'not_helpful', 'excellent', 'needs_improvement'
-  String? feedback,
-}) async {
-  return await post('/chat/messages/$messageId/feedback/', {
-    'reaction': reaction,
-    if (feedback != null) 'feedback': feedback,
-  });
-}
+  /// Dar feedback em mensagem específica
+  static Future<Map<String, dynamic>> sendMessageFeedback({
+    required int messageId,
+    required String reaction,
+    String? feedback,
+  }) async {
+    return await post('/chat/messages/$messageId/feedback/', {
+      'reaction': reaction,
+      if (feedback != null) 'feedback': feedback,
+    });
+  }
 
-/// Buscar analytics do chat
-static Future<Map<String, dynamic>> getChatAnalytics({
-  int days = 30,
-}) async {
-  return await get('/chat/analytics/?days=$days');
-}
+  /// Buscar analytics do chat
+  static Future<Map<String, dynamic>> getChatAnalytics({
+    int days = 30,
+  }) async {
+    return await get('/chat/analytics/?days=$days');
+  }
 
-static Future<Map<String, dynamic>> generateWorkoutFromChat({
-  int? conversationId,
-  int? daysPerWeek,
-  String? focus,
-}) async {
-  return await post('/recommendations/generate-workout-from-chat/', {  // 🔥 Endpoint específico!
-    if (conversationId != null) 'conversation_id': conversationId,
-    'user_preferences': {
-      if (daysPerWeek != null) 'days_per_week': daysPerWeek,
-      if (focus != null) 'focus': focus,
-    },
-  });
-}
+  /// Gerar treino a partir do chat
+  static Future<Map<String, dynamic>> generateWorkoutFromChat({
+    int? conversationId,
+    int? daysPerWeek,
+    String? focus,
+  }) async {
+    return await post('/recommendations/generate-workout-from-chat/', {
+      if (conversationId != null) 'conversation_id': conversationId,
+      'user_preferences': {
+        if (daysPerWeek != null) 'days_per_week': daysPerWeek,
+        if (focus != null) 'focus': focus,
+      },
+    });
+  }
+  
   // ============================================================
   // TESTE DE CONEXÃO
   // ============================================================
@@ -663,7 +747,7 @@ static Future<Map<String, dynamic>> generateWorkoutFromChat({
   static Future<bool> testConnection() async {
     try {
       print('🧪 Iniciando teste de conexão...');
-      await get('/workouts/test/', requireAuth: true); // Mudou para true
+      await get('/workouts/test/', requireAuth: true);
       print('✅ Conexão com API bem-sucedida');
       return true;
     } catch (e) {
@@ -690,7 +774,7 @@ class ApiException implements Exception {
   String toString() => 'ApiException($statusCode): $message';
 }
 
-/// ✅ Exception específica para sessão ativa
+/// Exception específica para sessão ativa
 class ActiveSessionException implements Exception {
   final int sessionId;
   final String workoutName;

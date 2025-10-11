@@ -317,49 +317,49 @@ class WorkoutGenerationFlow:
             'next_state': WorkoutGenerationFlow.STATE_WAITING_CONFIRMATION
         }
 
+# apps/chatbot/services/chat_service.py
+
 class WorkoutPlanExtractor:
     """
-    Extrai informações do plano de treino gerado pela IA
+    🔥 VERSÃO MELHORADA - Detecta planos em QUALQUER formato
     """
     
     @staticmethod
     def extract_plan_info(ai_response_content: str) -> Optional[Dict]:
         """
-        Analisa a resposta da IA e extrai:
-        - days_per_week
-        - focus
-        - difficulty
-        - exercises (lista de exercícios por dia)
+        Analisa a resposta da IA e extrai treinos
         """
         try:
             content_lower = ai_response_content.lower()
             
-            # 🔥 1. DETECTAR SE É UM PLANO DE TREINO
+            # 🔥 1. DETECTAR SE É UM PLANO (MAIS FLEXÍVEL)
             plan_indicators = [
+                'treino de',
+                'treino para',
                 'sugestão de treino',
-                'plano de treino',
-                'treino',
-                'segunda:',
-                'terça:',
-                'quarta:',
-                'quinta:',
-                'sexta:',
-                'sábado:',
+                'plano',
+                'dia 1', 'dia 2', 'dia 3',
+                'segunda', 'terça', 'quarta', 'quinta', 'sexta',
+                '**dia',  # ← ADICIONAR formato Markdown
                 'séries',
                 'repetições',
-                'exercício'
+                'reps',
+                'supino', 'agachamento', 'flexão', 'remada',
             ]
             
-            has_plan = sum(1 for indicator in plan_indicators 
-                          if indicator in content_lower) >= 5
+            # 🔥 REDUZIR para 3 indicadores
+            indicator_count = sum(1 for indicator in plan_indicators 
+                                 if indicator in content_lower)
             
-            if not has_plan:
-                logger.info("⚠️ Resposta não contém plano de treino completo")
+            logger.info(f"📊 Indicadores encontrados: {indicator_count}")
+            
+            if indicator_count < 3:
+                logger.info("⚠️ Resposta não contém plano de treino")
                 return None
             
             logger.info("✅ Plano de treino detectado")
             
-            # 🔥 2. EXTRAIR DIAS POR SEMANA
+            # 🔥 2. EXTRAIR DIAS
             days_per_week = WorkoutPlanExtractor._extract_days(ai_response_content)
             
             # 🔥 3. EXTRAIR FOCO
@@ -368,10 +368,14 @@ class WorkoutPlanExtractor:
             # 🔥 4. EXTRAIR DIFICULDADE
             difficulty = WorkoutPlanExtractor._extract_difficulty(ai_response_content)
             
-            # 🔥 5. EXTRAIR EXERCÍCIOS POR DIA
-            exercises_by_day = WorkoutPlanExtractor._extract_exercises_by_day(
+            # 🔥 5. EXTRAIR EXERCÍCIOS POR DIA (MELHORADO)
+            exercises_by_day = WorkoutPlanExtractor._extract_exercises_by_day_improved(
                 ai_response_content
             )
+            
+            if not exercises_by_day or len(exercises_by_day) == 0:
+                logger.warning("⚠️ Nenhum exercício extraído")
+                return None
             
             logger.info(f"📊 Plano extraído:")
             logger.info(f"   Dias: {days_per_week}")
@@ -389,51 +393,55 @@ class WorkoutPlanExtractor:
             
         except Exception as e:
             logger.error(f"❌ Erro ao extrair plano: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             return None
     
     @staticmethod
     def _extract_days(content: str) -> int:
-        """Extrai quantos dias por semana"""
-        # Procurar por "X dias por semana" ou "X dia"
-        pattern = r'(\d+)\s*dias?\s*(?:por\s*)?semana'
-        match = re.search(pattern, content, re.IGNORECASE)
+        """Extrai quantos dias - MELHORADO"""
+        content_lower = content.lower()
+        
+        # Procurar "X dias"
+        pattern = r'(\d+)\s*dias?'
+        match = re.search(pattern, content_lower)
         
         if match:
             days = int(match.group(1))
-            if 3 <= days <= 6:
+            if 1 <= days <= 7:
                 return days
         
-        # Contar dias mencionados
-        days_names = {
-            'segunda': 1, 'terça': 1, 'quarta': 1,
-            'quinta': 1, 'sexta': 1, 'sábado': 1, 'domingo': 1
-        }
+        # Contar quantos "Dia X:" ou "**Dia X:**"
+        day_pattern = r'\*?\*?dia\s*(\d+)'
+        day_matches = re.findall(day_pattern, content_lower)
         
-        day_count = sum(1 for day in days_names 
-                       if f"{day}:" in content.lower())
+        if day_matches:
+            max_day = max([int(d) for d in day_matches])
+            logger.info(f"   Detectou {max_day} dias pelo padrão 'Dia X'")
+            return max_day
         
-        if day_count > 0:
-            return day_count
+        # Contar dias da semana
+        days_count = sum(1 for day in ['segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado', 'domingo']
+                        if day in content_lower)
         
-        # Padrão: "Sugestão de Treino (Iniciante, Ganho de Massa, 5x/Semana)"
-        pattern2 = r'(\d+)x/semana'
-        match2 = re.search(pattern2, content, re.IGNORECASE)
-        if match2:
-            return int(match2.group(1))
+        if days_count > 0:
+            return days_count
         
-        return 5  # Default
+        return 3  # Default
     
     @staticmethod
     def _extract_focus(content: str) -> str:
-        """Extrai foco principal do treino"""
+        """Extrai foco - IGUAL"""
         focus_map = {
             'corpo completo': 'full_body',
             'full body': 'full_body',
             'corpo todo': 'full_body',
             'parte superior': 'upper',
             'upper': 'upper',
+            'membros superiores': 'upper',
             'parte inferior': 'lower',
             'lower': 'lower',
+            'membros inferiores': 'lower',
             'peito': 'chest',
             'peitoral': 'chest',
             'costas': 'back',
@@ -445,413 +453,161 @@ class WorkoutPlanExtractor:
             'arm': 'arms',
             'ombro': 'shoulders',
             'shoulder': 'shoulders',
+            'triceps': 'arms',
             'ganho de massa': 'hypertrophy',
             'massa muscular': 'hypertrophy',
-            'perda de peso': 'weight_loss',
-            'cardio': 'cardio',
+            'hipertrofia': 'hypertrophy',
         }
         
         content_lower = content.lower()
         
-        # Procurar por cada foco
         for text_pattern, focus_value in focus_map.items():
             if text_pattern in content_lower:
                 return focus_value
         
-        # Se menciona múltiplos dias, provavelmente é full_body ou upper/lower
-        if 'segunda' in content_lower and 'terça' in content_lower:
-            return 'upper_lower'
-        
-        return 'full_body'  # Default
+        return 'full_body'
     
     @staticmethod
     def _extract_difficulty(content: str) -> str:
-        """Extrai nível de dificuldade"""
+        """Extrai dificuldade - IGUAL"""
         content_lower = content.lower()
         
-        if 'iniciante' in content_lower:
+        if 'iniciante' in content_lower or 'beginner' in content_lower:
             return 'beginner'
         elif 'intermediário' in content_lower or 'intermediario' in content_lower:
             return 'intermediate'
         elif 'avançado' in content_lower or 'avancado' in content_lower:
             return 'advanced'
         
-        return 'intermediate'  # Default
+        return 'intermediate'
     
     @staticmethod
-    def _extract_exercises_by_day(content: str) -> Dict:
+    def _extract_exercises_by_day_improved(content: str) -> Dict:
         """
-        Extrai exercícios agrupados por dia
+        🔥 VERSÃO MELHORADA - Detecta múltiplos formatos
         
-        Retorna:
-        {
-            'segunda': {
-                'name': 'Peito e Tríceps',
-                'exercises': [
-                    {'name': 'Supino Reto', 'sets': 3, 'reps': '8-12'},
-                    ...
-                ]
-            },
-            ...
-        }
+        Formatos suportados:
+        - **Dia 1: Peito**
+        - Dia 1: Peito
+        - Segunda: Peito
+        - **Segunda-feira: Peito**
         """
         exercises_by_day = {}
         
-        # Padrões de dias
+        # 🔥 Padrões MELHORADOS (case-insensitive com re.IGNORECASE)
         day_patterns = [
-            'segunda', 'terça', 'quarta', 'quinta',
-            'sexta', 'sábado', 'domingo'
+            # Formato: **Dia 1:** ou Dia 1:
+            (r'\*?\*?dia\s*(\d+):?\*?\*?\s*([^\n*]*)', 'dia_{}'),
+            
+            # Formato: **Segunda:** ou Segunda:
+            (r'\*?\*?(segunda|terça|quarta|quinta|sexta|sábado|domingo):?\*?\*?\s*([^\n*]*)', '{}'),
+            
+            # Formato: **Segunda-feira:** 
+            (r'\*?\*?(segunda-feira|terça-feira|quarta-feira|quinta-feira|sexta-feira|sábado|domingo):?\*?\*?\s*([^\n*]*)', '{}'),
         ]
         
-        content_lower = content.lower()
-        
-        # Dividir por dias
-        for day in day_patterns:
-            pattern = rf'\*?\*?{day}:?\*?\*?\s*([^*]*?)(?=\*?\*?(?:' + '|'.join(day_patterns) + r':|domingo:|$))'
+        for pattern, key_format in day_patterns:
+            matches = re.finditer(pattern, content, re.IGNORECASE | re.MULTILINE)
             
-            match = re.search(pattern, content, re.IGNORECASE | re.DOTALL)
-            
-            if match:
-                day_content = match.group(1)
+            for match in matches:
+                day_key = match.group(1)
+                day_title = match.group(2) if len(match.groups()) >= 2 else day_key
                 
-                # Extrair nome/foco do dia
-                lines = day_content.split('\n')
-                day_title = lines[0].strip() if lines else day
+                # Formatar chave do dia
+                if pattern.startswith(r'\*?\*?dia'):
+                    formatted_key = key_format.format(day_key)
+                else:
+                    formatted_key = day_key.lower().replace('-feira', '')
+                
+                logger.info(f"   🔍 Detectou dia: {formatted_key} - {day_title}")
+                
+                # Extrair exercícios deste dia
+                # Pegar texto até o próximo "**Dia" ou "**Segunda" ou fim
+                start_pos = match.end()
+                
+                # Procurar próximo marcador de dia
+                next_day_pattern = r'\*?\*?(dia\s*\d+|segunda|terça|quarta|quinta|sexta|sábado|domingo)'
+                next_match = re.search(next_day_pattern, content[start_pos:], re.IGNORECASE)
+                
+                if next_match:
+                    end_pos = start_pos + next_match.start()
+                else:
+                    end_pos = len(content)
+                
+                day_content = content[start_pos:end_pos]
                 
                 # Extrair exercícios
-                exercises = []
-                for line in lines[1:]:
-                    line = line.strip()
-                    
-                    # Skip linhas vazias
-                    if not line:
-                        continue
-                    
-                    # Padrão: "Supino Reto: 3 séries de 8-12 repetições"
-                    exercise_pattern = r'^([^:]+):\s*(\d+)\s*séries?\s*de\s*([\d\-]+)\s*repetições?'
-                    ex_match = re.search(exercise_pattern, line, re.IGNORECASE)
-                    
-                    if ex_match:
-                        exercises.append({
-                            'name': ex_match.group(1).strip(),
-                            'sets': int(ex_match.group(2)),
-                            'reps': ex_match.group(3).strip(),
-                            'rest_time': 60,  # Default 1 minuto
-                        })
+                exercises = WorkoutPlanExtractor._extract_exercises_from_text(day_content)
                 
                 if exercises:
-                    exercises_by_day[day] = {
-                        'name': day_title,
+                    exercises_by_day[formatted_key] = {
+                        'name': day_title.strip() or formatted_key,
                         'exercises': exercises
                     }
                     
-                    logger.info(f"   {day}: {len(exercises)} exercícios")
+                    logger.info(f"      ✅ {len(exercises)} exercícios extraídos")
         
         return exercises_by_day
     
-def process_user_message(self, conversation_id: int, message: str) -> Dict:
-    """
-    Versão modificada para detectar e processar planos de treino
-    """
-    start_time = time.time()
-    
-    try:
-        conversation = Conversation.objects.get(id=conversation_id)
+    @staticmethod
+    def _extract_exercises_from_text(text: str) -> List[Dict]:
+        """
+        Extrai exercícios de um bloco de texto
         
-        if conversation.is_expired():
-            return {'error': 'Conversa expirada'}
+        Formatos suportados:
+        - Supino Reto: 3 séries de 8-12 repetições
+        - * Supino Reto (barra): 3 séries de 8-12 reps
+        - Supino Reto - 3x8-12
+        """
+        exercises = []
+        lines = text.split('\n')
         
-        # 🔥 Verificar fluxo de geração (este já funciona)
-        flow_result = self._check_workout_generation_flow(conversation_id, message)
-        
-        if flow_result.get('in_flow'):
-            user_message = self._save_user_message(conversation, message)
+        for line in lines:
+            line = line.strip()
             
-            ai_message = self._save_ai_message(
-                conversation,
-                flow_result['response'],
-                response_time_ms=round((time.time() - start_time) * 1000, 2),
-                confidence_score=1.0,
-                intent='workout_generation_flow'
-            )
+            if not line or line.startswith('*   Aquecimento') or line.startswith('*   Alongamento'):
+                continue
             
-            conversation.message_count += 2
-            conversation.ai_responses_count += 1
-            conversation.last_activity_at = timezone.now()
-            conversation.save()
-            
-            return {
-                'message_id': ai_message.id,
-                'response': flow_result['response'],
-                'conversation_updated': True,
-                'intent_detected': 'workout_generation_flow',
-                'confidence_score': 1.0,
-                'options': flow_result.get('options', []),
-                'action': flow_result.get('action'),
-                'workout_preferences': flow_result.get('workout_preferences'),
-                'method': 'workout_flow',
-            }
-        
-        # Continua com processamento normal
-        user_message = self._save_user_message(conversation, message)
-        
-        intent_analysis = self._analyze_message_intent(message, conversation)
-        user_message.intent_detected = intent_analysis.get('intent', 'general_question')
-        user_message.save()
-        
-        self._update_conversation_context(conversation, message, intent_analysis)
-        
-        ai_response = self._generate_ai_response(conversation, message, intent_analysis)
-        
-        if ai_response and ai_response.get('success'):
-            # 🔥 NOVO: Verificar se a IA gerou um plano de treino
-            plan_info = WorkoutPlanExtractor.extract_plan_info(ai_response['content'])
-            
-            if plan_info:
-                logger.info("🏋️ Plano de treino detectado! Criando treinos automáticos...")
+            # 🔥 Padrões de exercício (múltiplos formatos)
+            patterns = [
+                # Formato: Supino Reto: 3 séries de 8-12 repetições
+                r'^[*\-•]?\s*([^:()]+?)(?:\([^)]*\))?:\s*(\d+)\s*séries?\s*de\s*([\d\-]+)\s*(?:repetições?|reps?)',
                 
-                # Criar treinos automaticamente
-                workout_creation = self._create_workouts_from_plan(
-                    conversation,
-                    plan_info
-                )
+                # Formato: Supino Reto - 3x8-12
+                r'^[*\-•]?\s*([^:()]+?)(?:\([^)]*\))?\s*-\s*(\d+)\s*x\s*([\d\-]+)',
                 
-                if workout_creation.get('success'):
-                    logger.info(f"✅ {len(workout_creation['workouts'])} treinos criados")
+                # Formato: Supino Reto (barra ou halteres): 3 séries de 8-12 reps
+                r'^[*\-•]?\s*([^:]+?):\s*(\d+)\s*séries?\s*de\s*([\d\-]+)\s*reps?',
+            ]
+            
+            for pattern in patterns:
+                match = re.search(pattern, line, re.IGNORECASE)
+                
+                if match:
+                    exercise_name = match.group(1).strip()
                     
-                    # Criar resposta estruturada com opções
-                    structured_response = self._create_workout_success_response(
-                        conversation,
-                        ai_response['content'],
-                        workout_creation['workouts'],
-                        plan_info
-                    )
+                    # Limpar nome (remover texto entre parênteses)
+                    exercise_name = re.sub(r'\([^)]*\)', '', exercise_name).strip()
                     
-                    ai_message = self._save_ai_message(
-                        conversation,
-                        structured_response['response'],
-                        response_time_ms=round((time.time() - start_time) * 1000, 2),
-                        confidence_score=ai_response.get('confidence_score', 0.8),
-                        intent='workout_generated'
-                    )
+                    sets = int(match.group(2))
+                    reps = match.group(3).strip()
                     
-                    return {
-                        'message_id': ai_message.id,
-                        'response': structured_response['response'],
-                        'conversation_updated': True,
-                        'intent_detected': 'workout_generated',
-                        'confidence_score': ai_response.get('confidence_score'),
-                        'response_time_ms': round((time.time() - start_time) * 1000, 2),
-                        'action': 'workouts_created',
-                        'options': structured_response.get('options', []),
-                        'workouts_created': len(workout_creation['workouts']),
-                        'method': 'ai_plan_extraction',
-                    }
-            
-            # Se não gerou plano, resposta normal
-            ai_message = self._save_ai_message(
-                conversation,
-                ai_response['content'],
-                response_time_ms=round((time.time() - start_time) * 1000, 2),
-                confidence_score=ai_response.get('confidence_score', 0.8),
-                intent=intent_analysis.get('intent')
-            )
-            
-            return {
-                'message_id': ai_message.id,
-                'response': ai_response['content'],
-                'conversation_updated': True,
-                'intent_detected': intent_analysis.get('intent'),
-                'confidence_score': ai_response.get('confidence_score'),
-                'method': 'gemini_ai',
-            }
+                    exercises.append({
+                        'name': exercise_name,
+                        'sets': sets,
+                        'reps': reps,
+                        'rest_time': 60,
+                    })
+                    
+                    logger.info(f"         • {exercise_name}: {sets}x{reps}")
+                    break
         
-        # Fallback
-        fallback_response = self._generate_fallback_response(
-            conversation, message, intent_analysis
-        )
-        
-        ai_message = self._save_ai_message(
-            conversation,
-            fallback_response,
-            response_time_ms=round((time.time() - start_time) * 1000, 2),
-            confidence_score=0.6,
-            intent=intent_analysis.get('intent')
-        )
-        
-        return {
-            'message_id': ai_message.id,
-            'response': fallback_response,
-            'conversation_updated': True,
-            'method': 'rule_based_fallback',
-        }
-        
-    except Exception as e:
-        logger.error(f"Erro: {e}")
-        return {'error': 'Erro ao processar mensagem'}
+        return exercises
+    
+# apps/chatbot/services/chat_service.py
 
 
-def _create_workouts_from_plan(
-    self,
-    conversation: Conversation,
-    plan_info: Dict
-) -> Dict:
-    """
-    Cria múltiplos treinos (um por dia) a partir do plano extraído
-    """
-    try:
-        user = conversation.user
-        workouts_created = []
-        
-        exercises_by_day = plan_info.get('exercises_by_day', {})
-        
-        logger.info(f"📋 Criando treinos para {len(exercises_by_day)} dias...")
-        
-        for day_num, (day_name, day_data) in enumerate(exercises_by_day.items(), 1):
-            try:
-                # 1. Criar Workout
-                workout_name = f"{day_data['name']} - {day_name.capitalize()}"
-                
-                workout = Workout.objects.create(
-                    user=user,
-                    name=workout_name,
-                    description=f"Treino de {day_name} gerado pela IA\n"
-                               f"Foco: {plan_info.get('focus', 'full body')}\n"
-                               f"Criado em: {datetime.now().strftime('%d/%m/%Y')}",
-                    workout_type=plan_info.get('focus', 'full_body'),
-                    difficulty_level=plan_info.get('difficulty', 'intermediate'),
-                    created_from_conversation=True,
-                    conversation_id=conversation.id,
-                )
-                
-                logger.info(f"✅ Workout criado: {workout.name} (ID: {workout.id})")
-                
-                # 2. Adicionar exercícios
-                exercises = day_data.get('exercises', [])
-                
-                for order, exercise_data in enumerate(exercises, 1):
-                    try:
-                        # Procurar exercício no banco
-                        exercise = Exercise.objects.filter(
-                            name__icontains=exercise_data['name']
-                        ).first()
-                        
-                        if not exercise:
-                            # Se não encontrar, criar exercise genérico
-                            logger.warning(
-                                f"⚠️ Exercício não encontrado: {exercise_data['name']}. "
-                                f"Criando genérico..."
-                            )
-                            exercise = Exercise.objects.create(
-                                name=exercise_data['name'],
-                                description=f"Exercício: {exercise_data['name']}",
-                                difficulty_level=plan_info.get('difficulty', 'intermediate'),
-                            )
-                        
-                        # Adicionar ao workout
-                        WorkoutExercise.objects.create(
-                            workout=workout,
-                            exercise=exercise,
-                            sets=exercise_data.get('sets', 3),
-                            reps=exercise_data.get('reps', '8-12'),
-                            rest_time=exercise_data.get('rest_time', 60),
-                            order_in_workout=order,
-                        )
-                        
-                        logger.info(f"   ✓ {exercise.name}")
-                        
-                    except Exception as e:
-                        logger.warning(f"   ✗ Erro ao adicionar exercício: {e}")
-                
-                workouts_created.append({
-                    'id': workout.id,
-                    'name': workout.name,
-                    'day': day_name,
-                    'exercises': len(exercises),
-                })
-                
-            except Exception as e:
-                logger.error(f"❌ Erro ao criar workout para {day_name}: {e}")
-        
-        return {
-            'success': len(workouts_created) > 0,
-            'workouts': workouts_created,
-            'total': len(workouts_created),
-        }
-        
-    except Exception as e:
-        logger.error(f"❌ Erro crítico ao criar workouts: {e}")
-        return {'success': False, 'workouts': []}
 
-
-def _create_workout_success_response(
-    self,
-    conversation: Conversation,
-    ai_content: str,
-    workouts: List[Dict],
-    plan_info: Dict
-) -> Dict:
-    """
-    Cria resposta estruturada com botões para os treinos criados
-    """
-    days_created = ', '.join([w['day'].capitalize() for w in workouts])
-    
-    response_text = (
-        f"✅ **Treino criado com sucesso!**\n\n"
-        f"📋 {len(workouts)} treinos gerados:\n"
-        f"   • {days_created}\n\n"
-        f"💪 {sum(w['exercises'] for w in workouts)} exercícios no total\n"
-        f"📅 {plan_info.get('days_per_week', 5)} dias por semana\n\n"
-        f"**O que fazer agora?**"
-    )
-    
-    # Criar opções
-    options = []
-    
-    # Opção 1: Ver todos os treinos
-    options.append({
-        'id': 'view_all_workouts',
-        'label': '👁️ Ver Todos os Treinos',
-        'emoji': '👁️',
-        'action': 'navigate',
-        'data': {
-            'screen': 'my_workouts',
-            'filter': 'recent',
-        }
-    })
-    
-    # Opção 2: Começar primeiro treino
-    if workouts:
-        first_workout = workouts[0]
-        options.append({
-            'id': 'start_first_workout',
-            'label': f"▶️ Iniciar: {first_workout['day'].capitalize()}",
-            'emoji': '▶️',
-            'action': 'start_workout',
-            'data': {
-                'workout_id': first_workout['id'],
-            }
-        })
-    
-    # Opção 3: Continuar conversa
-    options.append({
-        'id': 'continue_chat',
-        'label': '💬 Continuar Conversa',
-        'emoji': '💬',
-        'action': 'chat',
-        'data': {}
-    })
-    
-    return {
-        'response': response_text,
-        'options': options,
-        'action': 'workouts_created',
-        'metadata': {
-            'workouts_count': len(workouts),
-            'total_exercises': sum(w['exercises'] for w in workouts),
-            'created_at': datetime.now().isoformat(),
-        }
-    }
 # ============================================================
 # CLASSE PRINCIPAL DO CHATBOT
 # ============================================================
@@ -924,62 +680,18 @@ class ChatService:
             }
     
     def process_user_message(self, conversation_id: int, message: str) -> Dict:
-        """Processa mensagem do usuário e gera resposta da IA"""
+        """
+        🔥 Processa mensagem do usuário e DETECTA PLANOS DE TREINO
+        """
         start_time = time.time()
         
         try:
             conversation = Conversation.objects.get(id=conversation_id)
             
             if conversation.is_expired():
-                return {
-                    'error': 'Conversa expirada',
-                    'suggestion': 'Inicie uma nova conversa para continuar'
-                }
+                return {'error': 'Conversa expirada'}
             
-            # 🔥 VERIFICAR FLUXO DE GERAÇÃO DE TREINO
-            flow_result = self._check_workout_generation_flow(conversation_id, message)
-            
-            if flow_result.get('in_flow'):
-                # Salvar mensagem do usuário
-                user_message = self._save_user_message(conversation, message)
-                
-                # Salvar resposta do fluxo
-                ai_message = self._save_ai_message(
-                    conversation,
-                    flow_result['response'],
-                    response_time_ms=round((time.time() - start_time) * 1000, 2),
-                    confidence_score=1.0,
-                    intent='workout_generation_flow'
-                )
-                
-                # Atualizar contadores
-                conversation.message_count += 2
-                conversation.ai_responses_count += 1
-                conversation.last_activity_at = timezone.now()
-                conversation.save()
-                
-                return {
-                    'message_id': ai_message.id,
-                    'response': flow_result['response'],
-                    'conversation_updated': True,
-                    'intent_detected': 'workout_generation_flow',
-                    'confidence_score': 1.0,
-                    'options': flow_result.get('options', []),
-                    'action': flow_result.get('action'),
-                    'workout_preferences': flow_result.get('workout_preferences'),
-                    'method': 'workout_flow',
-                    'ai_response': {
-                        'message_id': ai_message.id,
-                        'content': flow_result['response'],
-                        'intent_detected': 'workout_generation_flow',
-                        'confidence_score': 1.0,
-                        'options': flow_result.get('options', []),
-                        'action': flow_result.get('action'),
-                        'workout_preferences': flow_result.get('workout_preferences'),
-                    }
-                }
-            
-            # Continua com processamento normal
+            # Salvar mensagem do usuário
             user_message = self._save_user_message(conversation, message)
             
             intent_analysis = self._analyze_message_intent(message, conversation)
@@ -988,9 +700,70 @@ class ChatService:
             
             self._update_conversation_context(conversation, message, intent_analysis)
             
+            # Gerar resposta da IA
             ai_response = self._generate_ai_response(conversation, message, intent_analysis)
             
             if ai_response and ai_response.get('success'):
+                # 🔥 DEBUG: LOG ANTES DE DETECTAR
+                logger.error("=" * 80)
+                logger.error("🔍 TENTANDO DETECTAR PLANO DE TREINO")
+                logger.error(f"📝 Conteúdo da IA (primeiros 500 chars):")
+                logger.error(ai_response['content'][:500])
+                logger.error("=" * 80)
+                
+                # 🔥 DETECÇÃO AUTOMÁTICA DE PLANO
+                plan_info = WorkoutPlanExtractor.extract_plan_info(ai_response['content'])
+                
+                # 🔥 DEBUG: LOG DEPOIS DE DETECTAR
+                logger.error("=" * 80)
+                logger.error(f"🎯 RESULTADO DA DETECÇÃO:")
+                logger.error(f"   plan_info = {plan_info}")
+                logger.error("=" * 80)
+                
+                if plan_info:
+                    logger.error("🏋️ Plano detectado! Criando treinos...")
+                    
+                    workout_creation = self._create_workouts_from_plan(
+                        conversation,
+                        plan_info
+                    )
+                    
+                    if workout_creation.get('success'):
+                        logger.error(f"✅ {len(workout_creation['workouts'])} treinos criados!")
+                        
+                        structured_response = self._create_workout_success_response(
+                            conversation,
+                            ai_response['content'],
+                            workout_creation['workouts'],
+                            plan_info
+                        )
+                        
+                        ai_message = self._save_ai_message(
+                            conversation,
+                            structured_response['response'],
+                            response_time_ms=round((time.time() - start_time) * 1000, 2),
+                            confidence_score=ai_response.get('confidence_score', 0.8),
+                            intent='workout_generated'
+                        )
+                        
+                        conversation.message_count += 2
+                        conversation.ai_responses_count += 1
+                        conversation.last_activity_at = timezone.now()
+                        conversation.save()
+                        
+                        return {
+                            'message_id': ai_message.id,
+                            'response': structured_response['response'],
+                            'conversation_updated': True,
+                            'intent_detected': 'workout_generated',
+                            'action': 'workouts_created',
+                            'workouts_created': len(workout_creation['workouts']),
+                            'workout_ids': [w['id'] for w in workout_creation['workouts']],
+                            'options': structured_response.get('options', []),
+                            'method': 'ai_plan_extraction',
+                        }
+                
+                # Resposta normal (sem plano detectado)
                 ai_message = self._save_ai_message(
                     conversation,
                     ai_response['content'],
@@ -999,64 +772,214 @@ class ChatService:
                     intent=intent_analysis.get('intent')
                 )
                 
+                conversation.message_count += 2
+                conversation.ai_responses_count += 1
+                conversation.last_activity_at = timezone.now()
+                conversation.save()
+                
                 return {
                     'message_id': ai_message.id,
                     'response': ai_response['content'],
                     'conversation_updated': True,
                     'intent_detected': intent_analysis.get('intent'),
                     'confidence_score': ai_response.get('confidence_score'),
-                    'response_time_ms': round((time.time() - start_time) * 1000, 2),
-                    'suggested_actions': ai_response.get('suggested_actions', []),
-                    'workout_references': ai_response.get('workout_references', []),
                     'method': 'gemini_ai',
-                    'ai_response': {
-                        'message_id': ai_message.id,
-                        'content': ai_response['content'],
-                        'intent_detected': intent_analysis.get('intent'),
-                        'confidence_score': ai_response.get('confidence_score'),
-                    }
                 }
-            else:
-                fallback_response = self._generate_fallback_response(conversation, message, intent_analysis)
-                
-                ai_message = self._save_ai_message(
-                    conversation,
-                    fallback_response,
-                    response_time_ms=round((time.time() - start_time) * 1000, 2),
-                    confidence_score=0.6,
-                    intent=intent_analysis.get('intent')
-                )
-                
-                return {
-                    'message_id': ai_message.id,
-                    'response': fallback_response,
-                    'conversation_updated': True,
-                    'intent_detected': intent_analysis.get('intent'),
-                    'method': 'rule_based_fallback',
-                    'note': 'IA temporariamente indisponível',
-                    'ai_response': {
-                        'message_id': ai_message.id,
-                        'content': fallback_response,
-                        'intent_detected': intent_analysis.get('intent'),
-                        'confidence_score': 0.6,
-                    }
-                }
-                
-        except Conversation.DoesNotExist:
+            
+            # Fallback se IA falhou
+            fallback_response = self._generate_fallback_response(
+                conversation, message, intent_analysis
+            )
+            
+            ai_message = self._save_ai_message(
+                conversation,
+                fallback_response,
+                response_time_ms=round((time.time() - start_time) * 1000, 2),
+                confidence_score=0.6,
+                intent=intent_analysis.get('intent')
+            )
+            
+            conversation.message_count += 2
+            conversation.ai_responses_count += 1
+            conversation.last_activity_at = timezone.now()
+            conversation.save()
+            
             return {
-                'error': 'Conversa não encontrada',
-                'suggestion': 'Verifique o ID da conversa ou inicie uma nova'
+                'message_id': ai_message.id,
+                'response': fallback_response,
+                'conversation_updated': True,
+                'method': 'rule_based_fallback',
             }
+            
+        except Conversation.DoesNotExist:
+            return {'error': 'Conversa não encontrada'}
         except Exception as e:
-            logger.error(f"Error processing message in conversation {conversation_id}: {e}")
+            logger.error(f"❌ ERRO no process_user_message: {e}")
+            logger.error(traceback.format_exc())
             return {
                 'error': 'Erro ao processar mensagem',
-                'suggestion': 'Tente novamente ou reformule sua pergunta'
+                'details': str(e),
+                'method': 'error_handler'
             }
     
-    # ============================================================
-    # 🔥 MÉTODOS DO FLUXO DE GERAÇÃO DE TREINO
-    # ============================================================
+    def _create_workouts_from_plan(self, conversation: Conversation, plan_info: Dict) -> Dict:
+        """Cria múltiplos treinos (um por dia) a partir do plano extraído"""
+        try:
+            from apps.workouts.models import Workout, WorkoutExercise
+            from apps.exercises.models import Exercise
+            
+            user = conversation.user
+            workouts_created = []
+            exercises_by_day = plan_info.get('exercises_by_day', {})
+            
+            logger.info(f"📋 Criando treinos para {len(exercises_by_day)} dias...")
+            
+            for day_num, (day_name, day_data) in enumerate(exercises_by_day.items(), 1):
+                try:
+                    workout_name = f"{day_data['name']} - {day_name.capitalize()}"
+                    
+                    # 🔥 CORRIGIDO: Criar Workout com campos corretos do modelo
+                    workout = Workout.objects.create(
+                        name=workout_name,
+                        description=f"Treino de {day_name} gerado pela IA\n"
+                                   f"Foco: {plan_info.get('focus', 'full body')}\n"
+                                   f"Criado em: {datetime.now().strftime('%d/%m/%Y')}",
+                        workout_type=plan_info.get('focus', 'full_body'),
+                        difficulty_level=plan_info.get('difficulty', 'intermediate'),
+                        created_by_user=user,  # 🔥 Campo correto para associar ao usuário
+                        is_recommended=True,  # 🔥 Marcar como treino recomendado pela IA
+                    )
+                    
+                    logger.info(f"✅ Workout criado: {workout.name} (ID: {workout.id})")
+                    
+                    exercises = day_data.get('exercises', [])
+                    
+                    for order, exercise_data in enumerate(exercises, 1):
+                        try:
+                            exercise = Exercise.objects.filter(
+                                name__icontains=exercise_data['name']
+                            ).first()
+                            
+                            if not exercise:
+                                logger.warning(
+                                    f"⚠️ Exercício não encontrado: {exercise_data['name']}. "
+                                    f"Criando genérico..."
+                                )
+                                exercise = Exercise.objects.create(
+                                    name=exercise_data['name'],
+                                    description=f"Exercício: {exercise_data['name']}",
+                                    difficulty_level=plan_info.get('difficulty', 'intermediate'),
+                                )
+                            
+                            WorkoutExercise.objects.create(
+                                workout=workout,
+                                exercise=exercise,
+                                sets=exercise_data.get('sets', 3),
+                                reps=exercise_data.get('reps', '8-12'),
+                                rest_time=exercise_data.get('rest_time', 60),
+                                order_in_workout=order,
+                            )
+                            
+                            logger.info(f"   ✓ {exercise.name}")
+                            
+                        except Exception as e:
+                            logger.warning(f"   ✗ Erro ao adicionar exercício: {e}")
+                    
+                    workouts_created.append({
+                        'id': workout.id,
+                        'name': workout.name,
+                        'day': day_name,
+                        'exercises': len(exercises),
+                    })
+                    
+                except Exception as e:
+                    logger.error(f"❌ Erro ao criar workout para {day_name}: {e}")
+            
+            # 🔥 RETURN DENTRO DO TRY PRINCIPAL
+            return {
+                'success': len(workouts_created) > 0,
+                'workouts': workouts_created,
+                'total': len(workouts_created),
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Erro crítico ao criar workouts: {e}")
+            # 🔥 RETURN DENTRO DO EXCEPT
+            return {'success': False, 'workouts': []}
+    
+    def _create_workout_success_response(self, conversation: Conversation, ai_content: str, 
+                                        workouts: List[Dict], plan_info: Dict) -> Dict:
+        """Cria resposta estruturada com botões para os treinos criados"""
+        try:
+            days_created = ', '.join([w['day'].capitalize() for w in workouts])
+            
+            response_text = (
+                f"✅ **Treino criado com sucesso!**\n\n"
+                f"📋 {len(workouts)} treinos gerados:\n"
+                f"   • {days_created}\n\n"
+                f"💪 {sum(w['exercises'] for w in workouts)} exercícios no total\n"
+                f"📅 {plan_info.get('days_per_week', 5)} dias por semana\n\n"
+                f"**O que fazer agora?**"
+            )
+            
+            options = []
+            
+            # Opção 1: Ver todos os treinos
+            options.append({
+                'id': 'view_all_workouts',
+                'label': '👁️ Ver Todos os Treinos',
+                'emoji': '👁️',
+                'action': 'navigate',
+                'data': {
+                    'screen': 'my_workouts',
+                    'filter': 'recent',
+                }
+            })
+            
+            # Opção 2: Começar primeiro treino
+            if workouts:
+                first_workout = workouts[0]
+                options.append({
+                    'id': 'start_first_workout',
+                    'label': f"▶️ Iniciar: {first_workout['day'].capitalize()}",
+                    'emoji': '▶️',
+                    'action': 'start_workout',
+                    'data': {
+                        'workout_id': first_workout['id'],
+                    }
+                })
+            
+            # Opção 3: Continuar conversa
+            options.append({
+                'id': 'continue_chat',
+                'label': '💬 Continuar Conversa',
+                'emoji': '💬',
+                'action': 'chat',
+                'data': {}
+            })
+            
+            return {
+                'response': response_text,
+                'options': options,
+                'action': 'workouts_created',
+                'metadata': {
+                    'workouts_count': len(workouts),
+                    'total_exercises': sum(w['exercises'] for w in workouts),
+                    'created_at': datetime.now().isoformat(),
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Erro ao criar resposta: {e}")
+            return {
+                'response': '✅ Treinos criados com sucesso!',
+                'options': [],
+                'action': 'workouts_created',
+                'metadata': {}
+            }
+        # ============================================================
+        # 🔥 MÉTODOS DO FLUXO DE GERAÇÃO DE TREINO
+        # ============================================================
     
     def _check_workout_generation_flow(self, conversation_id: int, message: str) -> dict:
         try:
@@ -1264,68 +1187,10 @@ class ChatService:
                                 "• 3 = Avançado"
                     }
             
-            # WAITING_CONFIRMATION
-            elif flow_state == WorkoutGenerationFlow.STATE_WAITING_CONFIRMATION:
-                logger.info("⏳ WAITING_CONFIRMATION")
-                
-                message_lower = message.lower().strip()
-                logger.info(f"🎯 Resposta: '{message_lower}'")
-                
-                if message_lower in ['sim', 's', 'yes', '1', 'confirmar', 'ok', 'gerar']:
-                    logger.info("✅ CONFIRMADO - Gerando treino")
-                    
-                    # Atualizar estado
-                    ChatContext.set_context(
-                        conversation=conversation,
-                        context_type='workflow',
-                        key='workout_generation',
-                        value={
-                            'workout_flow_state': WorkoutGenerationFlow.STATE_GENERATING,
-                            'workout_flow_data': flow_data
-                        },
-                        relevance=1.0
-                    )
-                    
-                    return {
-                        'in_flow': True,
-                        'response': "⏳ Gerando seu treino personalizado... Aguarde!",
-                        'action': 'generate_workout',
-                        'workout_preferences': flow_data
-                    }
-                
-                elif message_lower in ['não', 'nao', 'no', 'cancelar', '2']:
-                    logger.info("❌ CANCELADO pelo usuário")
-                    
-                    # Limpar contexto
-                    ChatContext.set_context(
-                        conversation=conversation,
-                        context_type='workflow',
-                        key='workout_generation',
-                        value={
-                            'workout_flow_state': None,
-                            'workout_flow_data': {}
-                        },
-                        relevance=0.5
-                    )
-                    
-                    return {
-                        'in_flow': True,
-                        'response': "❌ Cancelado!\n\n"
-                                "Digite 'gerar treino' quando quiser tentar novamente."
-                    }
-                else:
-                    logger.warning(f"⚠️ Resposta ambígua: {message}")
-                    return {
-                        'in_flow': True,
-                        'response': "❓ Não entendi.\n\n"
-                                "Responda:\n"
-                                "• 'sim' para confirmar\n"
-                                "• 'cancelar' para desistir"
-                    }
-            
             # Nenhum fluxo ativo
             logger.info("ℹ️ Sem fluxo ativo")
             return {'in_flow': False}
+            
             
         except Exception as e:
             logger.error(f"❌ ERRO CRÍTICO: {e}")
@@ -1334,7 +1199,246 @@ class ChatService:
                 'in_flow': False,
                 'error': str(e)
             }
+    def generate_workout_with_ai(self, user, preferences: Dict) -> Dict:
+        """
+        Gera treino SEMANAL (separado por dias) usando IA
         
+        preferences: {
+            'focus': 'full_body', 'upper', 'lower', 'cardio', etc
+            'days': 3-6
+            'difficulty': 'beginner', 'intermediate', 'advanced'
+        }
+        
+        Retorna:
+        {
+            'success': True,
+            'workout_id': id,
+            'workout_data': {...}
+        }
+        """
+        try:
+            from apps.users.models import UserProfile
+            from apps.workouts.models import Workout, WorkoutExercise
+            from apps.exercises.models import Exercise
+            from apps.recommendations.services.ai_service import AIService
+            
+            logger.info(f"🤖 Gerando treino IA via chat para {user.email}")
+            logger.info(f"   Preferências: {preferences}")
+            
+            # 1. Buscar perfil do usuário
+            try:
+                profile = UserProfile.objects.get(user=user)
+            except UserProfile.DoesNotExist:
+                logger.error("Perfil não encontrado")
+                return {
+                    'success': False,
+                    'error': 'Perfil incompleto',
+                    'message': 'Complete seu perfil para gerar treinos'
+                }
+            
+            # 2. Mapear dificuldade
+            difficulty_map = {
+                'iniciante': 'beginner',
+                'intermediario': 'intermediate',
+                'avancado': 'advanced'
+            }
+            difficulty = difficulty_map.get(
+                preferences.get('difficulty', 'intermediate'),
+                'intermediate'
+            )
+            
+            # 3. Chamar IA para gerar plano
+            ai_service = AIService()
+            if not ai_service.is_available:
+                logger.warning("IA não disponível, usando fallback")
+                return self._generate_fallback_workout(user, preferences)
+            
+            # Calcular duração estimada (30-60 min por treino)
+            duration = preferences.get('duration', 45)
+            
+            workout_plan = ai_service.generate_personalized_workout_plan(
+                profile,
+                duration=duration,
+                focus=preferences.get('focus', 'full_body'),
+                difficulty=difficulty
+            )
+            
+            if not workout_plan:
+                logger.error("IA não retornou plano válido")
+                return self._generate_fallback_workout(user, preferences)
+            
+            # 4. NOVO: Estruturar como plano SEMANAL
+            weekly_workout = self._structure_workout_by_days(
+                workout_plan,
+                preferences.get('days', 5),
+                preferences.get('focus', 'full_body')
+            )
+            
+            # 5. Criar Workout no banco de dados
+            workout = Workout.objects.create(
+                name=weekly_workout['name'],
+                description=weekly_workout['description'],
+                difficulty_level=difficulty,
+                estimated_duration=duration,
+                target_muscle_groups=weekly_workout.get('target_muscle_groups', ''),
+                equipment_needed=weekly_workout.get('equipment_needed', 'Variado'),
+                calories_estimate=weekly_workout.get('calories_estimate', 200),
+                workout_type=weekly_workout.get('workout_type', 'full_body'),
+                is_recommended=True,
+                is_personalized=True,
+                created_by_user=user
+            )
+            
+            logger.info(f"✅ Workout criado: {workout.name} (ID: {workout.id})")
+            
+            # 6. Adicionar exercícios por dia
+            exercises_added = 0
+            for day_data in weekly_workout.get('days', []):
+                for idx, ex_data in enumerate(day_data.get('exercises', []), start=1):
+                    # Buscar ou criar exercício
+                    exercise, created = Exercise.objects.get_or_create(
+                        name=ex_data.get('name', f'Exercício {idx}'),
+                        defaults={
+                            'description': ex_data.get('description', ''),
+                            'muscle_group': ex_data.get('muscle_group', 'full_body'),
+                            'difficulty_level': difficulty,
+                            'equipment_needed': ex_data.get('equipment_needed', 'bodyweight'),
+                            'duration_minutes': ex_data.get('duration_minutes', 5),
+                            'calories_per_minute': 5.0,
+                            'instructions': ex_data.get('instructions', []),
+                        }
+                    )
+                    
+                    # Criar WorkoutExercise
+                    WorkoutExercise.objects.create(
+                        workout=workout,
+                        exercise=exercise,
+                        sets=ex_data.get('sets', 3),
+                        reps=ex_data.get('reps', '12-15'),
+                        weight=ex_data.get('weight'),
+                        rest_time=ex_data.get('rest_time', 60),
+                        order_in_workout=idx,
+                        notes=f"Dia: {day_data.get('day', 'N/A')}\n" + 
+                            '\n'.join(ex_data.get('tips', []))
+                    )
+                    exercises_added += 1
+            
+            logger.info(f"✅ Total: {exercises_added} exercícios adicionados")
+            
+            return {
+                'success': True,
+                'workout_id': workout.id,
+                'workout_name': workout.name,
+                'total_exercises': exercises_added,
+                'days_per_week': preferences.get('days', 5),
+                'difficulty': difficulty,
+                'focus': preferences.get('focus', 'full_body'),
+                'estimated_duration': duration
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Erro ao gerar treino com IA: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            
+            return {
+                'success': False,
+                'error': 'Erro ao gerar treino',
+                'details': str(e)
+            }
+
+    def _structure_workout_by_days(self, workout_plan: Dict, days_per_week: int, 
+                                focus: str) -> Dict:
+        """
+        Estrutura plano de treino da IA para organização por DIAS
+        
+        Exemplo retorno:
+        {
+            'name': 'Plano Semanal - Upper/Lower',
+            'days': [
+                {
+                    'day': 'Segunda',
+                    'focus': 'Peito e Tríceps',
+                    'exercises': [...]
+                },
+                ...
+            ]
+        }
+        """
+        exercises = workout_plan.get('exercises', [])
+        
+        # Definir estrutura de dias
+        if focus == 'full_body':
+            day_structure = [
+                {'day': 'Segunda', 'focus': 'Peito e Tríceps', 'muscle_groups': ['chest', 'arms']},
+                {'day': 'Terça', 'focus': 'Costas e Bíceps', 'muscle_groups': ['back', 'arms']},
+                {'day': 'Quarta', 'focus': 'Pernas', 'muscle_groups': ['legs', 'glutes']},
+                {'day': 'Quinta', 'focus': 'Ombros', 'muscle_groups': ['shoulders']},
+                {'day': 'Sexta', 'focus': 'Cardio/Flexibilidade', 'muscle_groups': ['cardio']},
+                {'day': 'Sábado', 'focus': 'Complemento', 'muscle_groups': ['full_body']},
+            ]
+        elif focus == 'upper':
+            day_structure = [
+                {'day': 'Segunda', 'focus': 'Peito', 'muscle_groups': ['chest']},
+                {'day': 'Quarta', 'focus': 'Costas', 'muscle_groups': ['back']},
+                {'day': 'Sexta', 'focus': 'Ombros/Braços', 'muscle_groups': ['shoulders', 'arms']},
+            ]
+        elif focus == 'lower':
+            day_structure = [
+                {'day': 'Segunda', 'focus': 'Quadríceps', 'muscle_groups': ['legs']},
+                {'day': 'Quarta', 'focus': 'Posteriores/Glúteos', 'muscle_groups': ['glutes', 'legs']},
+                {'day': 'Sexta', 'focus': 'Pernas Completo', 'muscle_groups': ['legs', 'glutes']},
+            ]
+        elif focus == 'cardio':
+            day_structure = [
+                {'day': 'Segunda', 'focus': 'Cardio Intenso', 'muscle_groups': ['cardio']},
+                {'day': 'Quarta', 'focus': 'Cardio Moderado', 'muscle_groups': ['cardio']},
+                {'day': 'Sexta', 'focus': 'Cardio Leve', 'muscle_groups': ['cardio']},
+            ]
+        else:
+            day_structure = [
+                {'day': 'Segunda', 'focus': 'Treino Geral', 'muscle_groups': ['full_body']},
+                {'day': 'Quarta', 'focus': 'Treino Geral', 'muscle_groups': ['full_body']},
+                {'day': 'Sexta', 'focus': 'Treino Geral', 'muscle_groups': ['full_body']},
+            ]
+        
+        # Selecionar apenas os dias necessários
+        selected_days = day_structure[:days_per_week]
+        
+        # Distribuir exercícios entre os dias
+        exercises_per_day = max(1, len(exercises) // len(selected_days))
+        
+        for i, day_info in enumerate(selected_days):
+            start_idx = i * exercises_per_day
+            end_idx = start_idx + exercises_per_day
+            
+            day_exercises = exercises[start_idx:end_idx]
+            
+            # Se é o último dia, adicionar exercícios restantes
+            if i == len(selected_days) - 1:
+                day_exercises = exercises[start_idx:]
+            
+            day_info['exercises'] = day_exercises
+        
+        return {
+            'name': f"Plano Semanal - {focus.replace('_', ' ').title()}",
+            'description': f"Treino de {days_per_week} dias por semana focado em {focus}",
+            'target_muscle_groups': focus,
+            'equipment_needed': workout_plan.get('equipment_needed', 'Variado'),
+            'calories_estimate': workout_plan.get('calories_estimate', 200),
+            'workout_type': workout_plan.get('workout_type', 'full_body'),
+            'days': selected_days
+        }
+
+    def _generate_fallback_workout(self, user, preferences: Dict) -> Dict:
+        """Fallback quando IA não está disponível"""
+        logger.warning("Usando fallback para geração de treino")
+        # Retornar erro ou usar método anterior sem IA
+        return {
+            'success': False,
+            'error': 'IA temporariamente indisponível',
+            'message': 'Tente novamente em alguns minutos'
+        }    
     def clear_workout_flow(self, conversation_id: int):
         """Limpa o fluxo de geração de treino"""
         try:

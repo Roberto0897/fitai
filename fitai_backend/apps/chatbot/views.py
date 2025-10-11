@@ -299,7 +299,23 @@ def start_conversation(request):
 def send_message(request, conversation_id):
     """
     Envia mensagem para conversa específica e recebe resposta da IA
+    
     """
+    logger = logging.getLogger(__name__)
+    
+    logger.error("=" * 80)
+    logger.error("🔍 DEBUG SEND_MESSAGE")
+    logger.error(f"📍 request.user: {request.user}")
+    logger.error(f"📍 is_authenticated: {request.user.is_authenticated}")
+    logger.error(f"📍 user.id: {getattr(request.user, 'id', 'NO ID')}")
+    logger.error(f"📦 Authorization: {request.headers.get('Authorization', 'MISSING')[:80]}")
+    logger.error("=" * 80)
+    
+    if not request.user.is_authenticated:
+        logger.error("❌ USUÁRIO NÃO AUTENTICADO!")
+        return Response({
+            'error': 'Usuário não autenticado'
+        }, status=status.HTTP_401_UNAUTHORIZED)
     start_time = time.time()
     
     try:
@@ -440,11 +456,38 @@ def send_message(request, conversation_id):
 @permission_classes([IsAuthenticated])
 @rate_limit_chatbot(max_requests_per_hour=50)
 def get_conversation_history(request, conversation_id):
-    """
-    Recupera histórico completo de uma conversa
-    """
+    """Recupera histórico completo de uma conversa"""
+    
+    # 🔥 DEBUG CRÍTICO - ADICIONAR ISTO:
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    logger.error("=" * 80)
+    logger.error("🔍 DEBUG GET_CONVERSATION_HISTORY")
+    logger.error(f"📍 request.user: {request.user}")
+    logger.error(f"📍 type(request.user): {type(request.user)}")
+    logger.error(f"📍 is_authenticated: {request.user.is_authenticated}")
+    logger.error(f"📍 is_anonymous: {request.user.is_anonymous}")
+    logger.error(f"📍 user.id: {getattr(request.user, 'id', 'NO ID')}")
+    logger.error(f"📍 user.username: {getattr(request.user, 'username', 'NO USERNAME')}")
+    logger.error(f"📦 Authorization header: {request.headers.get('Authorization', 'MISSING')[:80]}")
+    logger.error(f"🎯 conversation_id: {conversation_id}")
+    logger.error("=" * 80)
+    
+    # Se request.user não está autenticado, retornar erro detalhado
+    if not request.user.is_authenticated:
+        logger.error("❌ USUÁRIO NÃO AUTENTICADO!")
+        return Response({
+            'error': 'Usuário não autenticado',
+            'debug': {
+                'user': str(request.user),
+                'is_authenticated': request.user.is_authenticated,
+                'headers': dict(request.headers)
+            }
+        }, status=status.HTTP_401_UNAUTHORIZED)
+    
+    # ... resto do código continua igual
     try:
-        # Validar ID da conversa
         try:
             conversation_id = int(conversation_id)
         except (ValueError, TypeError):
@@ -453,18 +496,25 @@ def get_conversation_history(request, conversation_id):
                 'provided_id': str(conversation_id)
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Parâmetros de paginação
-        limit = min(int(request.GET.get('limit', 50)), 100)  # Máximo 100 mensagens
+        limit = min(int(request.GET.get('limit', 50)), 100)
         offset = int(request.GET.get('offset', 0))
         include_context = request.GET.get('include_context', 'false').lower() == 'true'
         
-        # Verificar se conversa existe e pertence ao usuário
+        # 🔥 DEBUG: Buscar conversa
+        logger.error(f"🔍 Buscando conversa {conversation_id} para user {request.user.id}")
+        
         try:
             conversation = Conversation.objects.get(id=conversation_id, user=request.user)
+            logger.error(f"✅ Conversa encontrada!")
         except Conversation.DoesNotExist:
+            logger.error(f"❌ Conversa NÃO encontrada!")
             return Response({
                 'error': 'Conversa não encontrada',
-                'conversation_id': conversation_id
+                'conversation_id': conversation_id,
+                'debug': {
+                    'user_id': request.user.id,
+                    'username': request.user.username
+                }
             }, status=status.HTTP_404_NOT_FOUND)
         
         # Cache key para histórico
