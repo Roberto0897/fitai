@@ -1315,3 +1315,141 @@ def _generate_specific_recs(workout_count, profile):
     
     return recs
 
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def get_daily_ai_recommendation(request):
+    """
+    GET/POST /api/v1/ai/daily-recommendation/
+    
+    Retorna recomendação diária personalizada gerada pela IA
+    
+    Body (opcional):
+    {
+        "recent_workouts": [
+            {
+                "date": "2025-10-11T10:00:00Z",
+                "muscle_groups": ["chest", "arms"],
+                "completed": true
+            }
+        ]
+    }
+    """
+    try:
+        user = request.user
+        user_profile = user.userprofile
+        
+        # Verificar cache (recomendação válida por 6 horas)
+        cache_key = f"daily_recommendation_{user.id}_{datetime.now().strftime('%Y%m%d')}"
+        cached_recommendation = cache.get(cache_key)
+        
+        # Se request é GET e tem cache, retornar cache
+        if request.method == 'GET' and cached_recommendation:
+            logger.info(f"Returning cached daily recommendation for user {user.id}")
+            return Response({
+                'success': True,
+                'recommendation': cached_recommendation,
+                'cached': True
+            })
+        
+        # Pegar histórico do body se fornecido
+        recent_workouts = None
+        if request.method == 'POST' and request.data:
+            recent_workouts = request.data.get('recent_workouts')
+        
+        # Gerar nova recomendação
+        ai_service = AIService()
+        
+        if not ai_service.is_available:
+            return Response({
+                'success': False,
+                'message': 'Serviço de IA temporariamente indisponível',
+                'fallback_recommendation': {
+                    'recommendation_type': 'workout',
+                    'title': 'Continue firme!',
+                    'message': f'Olá {user.first_name}! Hoje é um ótimo dia para treinar.',
+                    'focus_area': 'full_body',
+                    'intensity': 'moderate',
+                    'emoji': '💪'
+                }
+            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        
+        recommendation = ai_service.generate_daily_recommendation(
+            user_profile=user_profile,
+            workout_history=recent_workouts
+        )
+        
+        if recommendation:
+            # Cachear por 6 horas
+            cache.set(cache_key, recommendation, 21600)
+            
+            logger.info(f"Generated daily recommendation for user {user.id}: {recommendation['recommendation_type']}")
+            
+            return Response({
+                'success': True,
+                'recommendation': recommendation,
+                'cached': False
+            })
+        else:
+            # Fallback se IA falhar
+            return Response({
+                'success': False,
+                'message': 'Não foi possível gerar recomendação personalizada',
+                'fallback_recommendation': {
+                    'recommendation_type': 'motivation',
+                    'title': 'Você consegue!',
+                    'message': f'Olá {user.first_name}! Continue seu progresso hoje.',
+                    'focus_area': 'full_body',
+                    'intensity': 'moderate',
+                    'emoji': '🌟',
+                    'reasoning': 'Mensagem motivacional padrão'
+                }
+            }, status=status.HTTP_200_OK)
+            
+    except Exception as e:
+        logger.error(f"Error generating daily recommendation: {e}", exc_info=True)
+        return Response({
+            'success': False,
+            'error': 'Erro ao gerar recomendação',
+            'details': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def refresh_daily_recommendation(request):
+    """
+    POST /api/v1/ai/daily-recommendation/refresh/
+    
+    Força regeneração da recomendação diária (limpa cache)
+    """
+    try:
+        user = request.user
+        
+        # Limpar cache
+        cache_key = f"daily_recommendation_{user.id}_{datetime.now().strftime('%Y%m%d')}"
+        cache.delete(cache_key)
+        
+        # Redirecionar para get_daily_ai_recommendation
+        return get_daily_ai_recommendation(request)
+        
+    except Exception as e:
+        logger.error(f"Error refreshing recommendation: {e}")
+        return Response({
+            'success': False,
+            'error': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# urls.py - Adicionar estas rotas
+"""
+from django.urls import path
+from .views import get_daily_ai_recommendation, refresh_daily_recommendation
+
+urlpatterns = [
+    # ... suas outras rotas
+    
+    path('ai/daily-recommendation/', get_daily_ai_recommendation, name='daily-ai-recommendation'),
+    path('ai/daily-recommendation/refresh/', refresh_daily_recommendation, name='refresh-daily-recommendation'),
+]
+"""

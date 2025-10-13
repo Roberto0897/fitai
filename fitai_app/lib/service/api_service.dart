@@ -545,6 +545,7 @@ class ApiService {
     return await get('/ai/exercise-recommendations/');
   }
   
+  
   /// Gerar plano de treino com IA
   static Future<Map<String, dynamic>> generateAIWorkoutPlan({
     int? duration,
@@ -633,7 +634,84 @@ class ApiService {
   static Future<Map<String, dynamic>> duplicateWorkout(int workoutId) async {
     return await post('/workouts/$workoutId/duplicate/', {});
   }
+  //widget dash
+  static Future<Map<String, dynamic>> getSmartRecommendation() async {
+    try {
+      print('🧠 Buscando recomendação inteligente...');
+      final response = await get('/workouts/smart-recommendation/');
+      print('✅ Recomendação inteligente obtida com sucesso');
+      return response;
+    } catch (e) {
+      if (e is ApiException && e.statusCode == 404) {
+        print('ℹ️ Nenhuma recomendação disponível');
+        return {'success': false, 'has_recommendation': false};
+      }
+      print('❌ Erro ao obter recomendação: $e');
+      return {'success': false, 'error': e.toString()};
+    }
+  }
 
+ /// 🤖 Buscar recomendação diária da IA
+/// GET /api/v1/recommendations/ai/daily-recommendation/
+static Future<Map<String, dynamic>> getDailyAIRecommendation() async {
+  try {
+    print('🤖 Buscando recomendação diária da IA...');
+    print('📡 Endpoint: /recommendations/ai/daily-recommendation/');
+    
+    final response = await get('/recommendations/ai/daily-recommendation/');
+    
+    print('✅ Resposta recebida:');
+    print('   Success: ${response['success']}');
+    print('   Has recommendation: ${response['recommendation'] != null}');
+    
+    if (response['recommendation'] != null) {
+      print('   Tipo: ${response['recommendation']['recommendation_type']}');
+      print('   Título: ${response['recommendation']['title']}');
+    }
+    
+    return response;
+    
+  } catch (e) {
+    print('❌ Erro ao buscar recomendação diária: $e');
+    
+    // Retornar fallback local em caso de erro
+    return {
+      'success': true,
+      'recommendation': {
+        'recommendation_type': 'motivation',
+        'title': 'Continue firme!',
+        'message': 'Cada treino é um passo rumo ao seu objetivo!',
+        'emoji': '💪',
+        'focus_area': 'full_body',
+        'intensity': 'moderate',
+        'reasoning': 'Mensagem motivacional padrão',
+        'motivational_tip': 'Você consegue!',
+        'suggested_duration': 30
+      },
+      'cached': false,
+      'is_fallback': true
+    };
+  }
+}
+
+/// 🔄 Forçar atualização da recomendação diária
+/// POST /api/v1/recommendations/ai/daily-recommendation/refresh/
+static Future<Map<String, dynamic>> refreshDailyAIRecommendation() async {
+  try {
+    print('🔄 Forçando refresh da recomendação...');
+    
+    final response = await post('/recommendations/ai/daily-recommendation/refresh/', {});
+    
+    return response;
+    
+  } catch (e) {
+    print('❌ Erro ao fazer refresh: $e');
+    return {
+      'success': false,
+      'error': e.toString()
+    };
+  }
+}
   // ============================================================
   // ENDPOINTS ESPECÍFICOS - CHATBOT
   // ============================================================

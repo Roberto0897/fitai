@@ -50,5 +50,12 @@ urlpatterns = [
    # path('ai/generate-onboarding/', views.generate_onboarding_workout, name='ai-onboarding'),
 
     path('workouts/onboarding/generate/', views.generate_onboarding_workout, name='generate_onboarding_workout'),
+
+
+     # ============================================================
+    # 🆕 RECOMENDAÇÃO INTELIGENTE (NOVA)
+    # ============================================================
+    path('workouts/smart-recommendation/', views.smart_recommendation_view, name='smart-recommendation'),
+    
     
 ]

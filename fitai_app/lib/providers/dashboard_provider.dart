@@ -30,9 +30,23 @@ class DashboardProvider extends ChangeNotifier {
   String? _aiMotivationalMessage;
   int? _daysSinceLastWorkout;
   bool _isLoadingAIRecommendation = false;
+
+   // 🔥 NOVO: Recomendação diária da IA
+  Map<String, dynamic>? _dailyAIRecommendation;
+  bool _hasDailyAIRecommendation = false;
+  String _aiRecommendationType = 'motivation';
+  String _aiRecommendationEmoji = '💪';
   
   // Histórico para cálculos
   List<WorkoutHistoryModel> _workoutHistory = [];
+
+  // NOVOS CAMPOS - Recomendação inteligente
+  Map<String, dynamic> _smartRecommendation = {};
+  Map<String, dynamic> _analysisData = {};
+  String _recommendationReason = '';
+  double _confidenceScore = 0.0;
+  List<String> _personalizationFactors = [];
+  bool _hasSmartRecommendation = false;
   
   // ============================================================
   // GETTERS
@@ -59,6 +73,12 @@ class DashboardProvider extends ChangeNotifier {
   String get aiRecommendation => _aiMotivationalMessage ?? 'Mantenha a consistência nos treinos!';
   int get daysSinceLastWorkout => _daysSinceLastWorkout ?? 0;
   bool get isLoadingAIRecommendation => _isLoadingAIRecommendation;
+
+   // 🔥 NOVO: Getters da recomendação diária
+  Map<String, dynamic>? get dailyAIRecommendation => _dailyAIRecommendation;
+  bool get hasDailyAIRecommendation => _hasDailyAIRecommendation;
+  String get aiRecommendationType => _aiRecommendationType;
+  String get aiRecommendationEmoji => _aiRecommendationEmoji;
   
   String get daysSinceLastWorkoutText {
     if (_daysSinceLastWorkout == null) return 'Sem dados';
@@ -67,6 +87,13 @@ class DashboardProvider extends ChangeNotifier {
     return '$_daysSinceLastWorkout dias desde último treino';
   }
   
+    // NOVOS GETTERS - Recomendação inteligente
+  Map<String, dynamic> get smartRecommendation => _smartRecommendation;
+  Map<String, dynamic> get analysisData => _analysisData;
+  String get recommendationReason => _recommendationReason;
+  double get confidenceScore => _confidenceScore;
+  List<String> get personalizationFactors => _personalizationFactors;
+  bool get hasSmartRecommendation => _hasSmartRecommendation;
   // ============================================================
   // MÉTODOS PRINCIPAIS
   // ============================================================
@@ -96,8 +123,8 @@ class DashboardProvider extends ChangeNotifier {
         await _loadRecommendedWorkoutWithAI();
       }
       
-      // 5. Gerar recomendação IA motivacional (em paralelo, não bloqueia)
-      _loadAIMotivationalRecommendation();
+      // 3. 🔥 Carregar recomendação diária da IA (NOVO)
+      await loadDailyAIRecommendation();
       
       _error = null;
       
@@ -415,130 +442,303 @@ class DashboardProvider extends ChangeNotifier {
   // 🤖 GERAR RECOMENDAÇÃO MOTIVACIONAL COM IA
   // ============================================================
   
-  Future<void> _loadAIMotivationalRecommendation() async {
-    _isLoadingAIRecommendation = true;
+  /// 🔥 NOVO: Carregar recomendação diária da IA
+Future<void> loadDailyAIRecommendation() async {
+  try {
+    debugPrint('🤖 Carregando recomendação diária da IA...');
+    
+    // Calcular dias desde último treino
+    if (_workoutHistory.isNotEmpty) {
+      final lastWorkout = _workoutHistory.first;
+      final now = DateTime.now();
+      _daysSinceLastWorkout = now.difference(lastWorkout.date).inDays;
+    } else {
+      _daysSinceLastWorkout = 999;
+    }
+    
+    final response = await ApiService.getDailyAIRecommendation();
+    
+    if (response['success'] == true && response['recommendation'] != null) {
+      _dailyAIRecommendation = response['recommendation'];
+      _hasDailyAIRecommendation = true;
+      
+      // Extrair informações
+      _aiRecommendationType = _dailyAIRecommendation!['recommendation_type'] ?? 'motivation';
+      _aiRecommendationEmoji = _dailyAIRecommendation!['emoji'] ?? '💪';
+      
+      // ✅ Atualizar mensagem motivacional com a da IA
+      _aiMotivationalMessage = _dailyAIRecommendation!['message'];
+      
+      debugPrint('✅ Recomendação IA carregada:');
+      debugPrint('   Tipo: $_aiRecommendationType');
+      debugPrint('   Título: ${_dailyAIRecommendation!['title']}');
+      debugPrint('   Mensagem: $_aiMotivationalMessage');
+      debugPrint('   Cached: ${response['cached'] ?? false}');
+      
+    } else if (response['recommendation'] != null) {
+      // Fallback do backend
+      _dailyAIRecommendation = response['recommendation'];
+      _hasDailyAIRecommendation = true;
+      _aiRecommendationType = _dailyAIRecommendation!['recommendation_type'] ?? 'motivation';
+      _aiRecommendationEmoji = _dailyAIRecommendation!['emoji'] ?? '💪';
+      _aiMotivationalMessage = _dailyAIRecommendation!['message'];
+      
+      debugPrint('✅ Usando recomendação do backend (fallback)');
+    } else {
+      debugPrint('ℹ️ Nenhuma recomendação disponível');
+      _hasDailyAIRecommendation = false;
+      _generateLocalMotivationalMessage();
+    }
+    
     notifyListeners();
     
-    try {
-      debugPrint('🤖 Gerando recomendação motivacional com IA...');
-      
-      // Calcular dias desde último treino
-      if (_workoutHistory.isNotEmpty) {
-        final lastWorkout = _workoutHistory.first;
-        final now = DateTime.now();
-        _daysSinceLastWorkout = now.difference(lastWorkout.date).inDays;
-      } else {
-        _daysSinceLastWorkout = 999;
-      }
-      
-      try {
-        final aiResponse = await ApiService.getAIExerciseRecommendations();
-        
-        String? motivationalText;
-        
-        if (aiResponse['motivational_message'] != null) {
-          motivationalText = aiResponse['motivational_message'];
-        } else if (aiResponse['next_steps'] != null && 
-                 aiResponse['next_steps']['suggestion'] != null) {
-          final suggestion = aiResponse['next_steps']['suggestion'];
-          final focus = aiResponse['next_steps']['focus'];
-          
-          if (focus != null) {
-            motivationalText = '$suggestion - $focus';
-          } else {
-            motivationalText = suggestion;
-          }
-        } else if (aiResponse['ai_recommendations'] != null &&
-                 aiResponse['ai_recommendations']['recommendation_strategy'] != null) {
-          motivationalText = aiResponse['ai_recommendations']['recommendation_strategy'];
-        }
-        
-        if (motivationalText != null && motivationalText.isNotEmpty) {
-          _aiMotivationalMessage = motivationalText;
-          debugPrint('✅ Mensagem motivacional da IA: $_aiMotivationalMessage');
-        } else {
-          _generateLocalMotivationalMessage();
-        }
-        
-      } catch (aiError) {
-        debugPrint('⚠️ IA não disponível: $aiError');
-        _generateLocalMotivationalMessage();
-      }
-      
-    } catch (e) {
-      debugPrint('❌ Erro ao gerar recomendação: $e');
-      _generateLocalMotivationalMessage();
-    } finally {
-      _isLoadingAIRecommendation = false;
-      notifyListeners();
-    }
-  }
-  
-  void _generateLocalMotivationalMessage() {
-    if (_workoutHistory.isEmpty) {
-      _aiMotivationalMessage = '🚀 Comece sua jornada fitness hoje!';
-      _daysSinceLastWorkout = 0;
-      return;
-    }
-
-    if (_daysSinceLastWorkout == 0) {
-      _aiMotivationalMessage = '🔥 Ótimo! Você já treinou hoje!';
-    } else if (_daysSinceLastWorkout == 1) {
-      _aiMotivationalMessage = '💪 Continue consistente!';
-    } else if (_daysSinceLastWorkout! <= 3) {
-      _aiMotivationalMessage = '⏰ Hora de voltar aos treinos!';
-    } else if (_daysSinceLastWorkout! <= 7) {
-      _aiMotivationalMessage = '👋 Sentimos sua falta!';
-    } else {
-      _aiMotivationalMessage = '🌟 Vamos recomeçar?';
-    }
-  }
-  
-  // ============================================================
-  // HELPERS
-  // ============================================================
-  
-  void _setDefaultValues() {
-    _totalWorkouts = 0;
-    _activeDays = 0;
-    _weeklyGoalPercentage = 0.0;
-    _recommendedWorkout = null;
-    _isAIGeneratedWorkout = false;
-    _isAIRecommendation = false;
-    _aiRecommendationReason = null;
-    _aiMotivationalMessage = 'Não foi possível carregar recomendações';
-    _daysSinceLastWorkout = null;
-    _workoutHistory = [];
-  }
-  
-  void clear() {
-    _setDefaultValues();
-    _error = null;
+  } catch (e) {
+    debugPrint('❌ Erro ao carregar recomendação diária: $e');
+    _hasDailyAIRecommendation = false;
+    _generateLocalMotivationalMessage();
     notifyListeners();
   }
-  
-  Future<void> refreshStatistics() async {
-    try {
-      await _loadWorkoutHistory();
-      _calculateStatistics();
-      _generateLocalMotivationalMessage();
-      notifyListeners();
-    } catch (e) {
-      debugPrint('❌ Erro ao atualizar: $e');
-    }
+}
+
+/// Gera mensagem motivacional local (fallback)
+void _generateLocalMotivationalMessage() {
+  if (_workoutHistory.isEmpty) {
+    _aiMotivationalMessage = '🚀 Comece sua jornada fitness hoje!';
+    _daysSinceLastWorkout = 0;
+    return;
   }
-  
-  Future<void> refreshRecommendedWorkout() async {
-    try {
-      await _loadLastAIGeneratedWorkout();
-      if (_recommendedWorkout == null) {
-        await _loadRecommendedWorkoutWithAI();
-      }
-      notifyListeners();
-    } catch (e) {
-      debugPrint('❌ Erro: $e');
-    }
+
+  if (_daysSinceLastWorkout == 0) {
+    _aiMotivationalMessage = '🔥 Ótimo! Você já treinou hoje!';
+  } else if (_daysSinceLastWorkout == 1) {
+    _aiMotivationalMessage = '💪 Continue consistente!';
+  } else if (_daysSinceLastWorkout! <= 3) {
+    _aiMotivationalMessage = '⏰ Hora de voltar aos treinos!';
+  } else if (_daysSinceLastWorkout! <= 7) {
+    _aiMotivationalMessage = '👋 Sentimos sua falta!';
+  } else {
+    _aiMotivationalMessage = '🌟 Vamos recomeçar?';
   }
+}
+
+/// 🔄 Refresh da recomendação diária
+Future<void> refreshDailyAIRecommendation() async {
+  try {
+    debugPrint('🔄 Forçando refresh da recomendação...');
+    
+    _isLoading = true;
+    notifyListeners();
+    
+    final response = await ApiService.refreshDailyAIRecommendation();
+    
+    if (response['success'] == true && response['recommendation'] != null) {
+      _dailyAIRecommendation = response['recommendation'];
+      _hasDailyAIRecommendation = true;
+      _aiRecommendationType = _dailyAIRecommendation!['recommendation_type'] ?? 'motivation';
+      _aiRecommendationEmoji = _dailyAIRecommendation!['emoji'] ?? '💪';
+      _aiMotivationalMessage = _dailyAIRecommendation!['message'];
+      
+      debugPrint('✅ Recomendação atualizada com sucesso');
+    }
+    
+    _isLoading = false;
+    notifyListeners();
+    
+  } catch (e) {
+    debugPrint('❌ Erro no refresh: $e');
+    _isLoading = false;
+    notifyListeners();
+  }
+}
+
+// ============================================
+// MANTER loadSmartRecommendation SE VOCÊ USA
+// (para o card de treino recomendado)
+// ============================================
+
+/// Carrega recomendação inteligente baseada em análise
+Future<void> loadSmartRecommendation() async {
+  try {
+    debugPrint('🧠 Carregando recomendação inteligente...');
+
+    final response = await ApiService.getSmartRecommendation();
+
+    if (response['success'] == true) {
+      _smartRecommendation = response['workout'] ?? {};
+      _analysisData = response['analysis'] ?? {};
+      
+      final analysis = response['analysis'] ?? {};
+      _recommendationReason = analysis['recommendation_reason'] ?? 'Recomendação personalizada';
+      _confidenceScore = (analysis['confidence_score'] ?? 0.0).toDouble();
+      _personalizationFactors = List<String>.from(
+        analysis['personalization_factors'] ?? []
+      );
+
+      _hasSmartRecommendation = _smartRecommendation.isNotEmpty;
+
+      debugPrint('✅ Recomendação inteligente carregada');
+      debugPrint('   Razão: $_recommendationReason');
+      debugPrint('   Confiança: ${(_confidenceScore * 100).toStringAsFixed(0)}%');
+
+    } else {
+      debugPrint('ℹ️ Sem recomendação inteligente disponível');
+      _hasSmartRecommendation = false;
+      _smartRecommendation = {};
+      _analysisData = {};
+    }
+
+    notifyListeners();
+
+  } catch (e) {
+    debugPrint('❌ Erro ao carregar recomendação inteligente: $e');
+    _hasSmartRecommendation = false;
+    notifyListeners();
+  }
+}
+
+/// Formata a razão da recomendação para exibição
+String getFormattedReason() {
+  if (_recommendationReason.isEmpty) {
+    return 'Treino personalizado para você';
+  }
+  return _recommendationReason;
+}
+
+/// Retorna emoji baseado no tipo de recomendação
+String getRecommendationEmoji() {
+  if (_analysisData.isEmpty) return '💪';
+  
+  final type = _analysisData['recommendation_type'] ?? 'strength';
+  
+  final emojiMap = {
+    'strength': '🏋️',
+    'cardio': '🏃',
+    'recovery': '🧘',
+    'beginner': '👶',
+    'advanced': '🚀',
+    'rest': '😴',
+    'hiit': '⚡',
+    'flexibility': '🤸',
+  };
+  
+  return emojiMap[type] ?? '💪';
+}
+
+/// Retorna cor baseada na confiança
+Color getConfidenceColor() {
+  if (_confidenceScore >= 0.85) return const Color(0xFF4CAF50);
+  if (_confidenceScore >= 0.7) return const Color(0xFF00BCD4);
+  return const Color(0xFFFFC107);
+}
+
+/// Retorna texto de confiança
+String getConfidenceText() {
+  if (_confidenceScore >= 0.85) return 'Muito confiante';
+  if (_confidenceScore >= 0.7) return 'Confiante';
+  return 'Sugestão';
+}
+
+// ============================================
+// HELPERS
+// ============================================
+
+void _setDefaultValues() {
+  _totalWorkouts = 0;
+  _activeDays = 0;
+  _weeklyGoalPercentage = 0.0;
+  _recommendedWorkout = null;
+  _isAIGeneratedWorkout = false;
+  _isAIRecommendation = false;
+  _aiRecommendationReason = null;
+  _aiMotivationalMessage = 'Não foi possível carregar recomendações';
+  _daysSinceLastWorkout = null;
+  _workoutHistory = [];
+  
+  // Limpar recomendação diária
+  _dailyAIRecommendation = null;
+  _hasDailyAIRecommendation = false;
+  _aiRecommendationType = 'motivation';
+  _aiRecommendationEmoji = '💪';
+}
+
+// ============================================
+// ADICIONE ESTES MÉTODOS DEPOIS DOS HELPERS
+// (logo após _setDefaultValues())
+// ============================================
+
+/// Método auxiliar para cor baseada no tipo de recomendação diária
+Color getAIRecommendationColor() {
+  switch (_aiRecommendationType) {
+    case 'workout':
+      return const Color(0xFF4CAF50); // Verde
+    case 'rest':
+      return const Color(0xFFFF9800); // Laranja
+    case 'active_recovery':
+      return const Color(0xFF00BCD4); // Cyan
+    case 'motivation':
+      return const Color(0xFFE91E63); // Rosa
+    default:
+      return const Color(0xFF00BCD4);
+  }
+}
+
+/// Método auxiliar para ícone baseado no tipo de recomendação diária
+IconData getAIRecommendationIcon() {
+  switch (_aiRecommendationType) {
+    case 'workout':
+      return Icons.fitness_center;
+    case 'rest':
+      return Icons.bed;
+    case 'active_recovery':
+      return Icons.self_improvement;
+    case 'motivation':
+      return Icons.emoji_events;
+    default:
+      return Icons.lightbulb_outline;
+  }
+}
+
+/// Getter para título da recomendação diária
+String get aiRecommendationTitle {
+  if (_dailyAIRecommendation != null && _dailyAIRecommendation!['title'] != null) {
+    return _dailyAIRecommendation!['title'];
+  }
+  return 'Recomendação do Dia';
+}
+
+/// Limpar dados
+void clear() {
+  _setDefaultValues();
+  _error = null;
+  notifyListeners();
+}
+
+/// Refresh estatísticas
+Future<void> refreshStatistics() async {
+  try {
+    await _loadWorkoutHistory();
+    _calculateStatistics();
+    _generateLocalMotivationalMessage();
+    notifyListeners();
+  } catch (e) {
+    debugPrint('❌ Erro ao atualizar: $e');
+  }
+}
+
+/// Refresh treino recomendado
+Future<void> refreshRecommendedWorkout() async {
+  try {
+    await _loadLastAIGeneratedWorkout();
+    if (_recommendedWorkout == null) {
+      await _loadRecommendedWorkoutWithAI();
+    }
+    notifyListeners();
+  } catch (e) {
+    debugPrint('❌ Erro: $e');
+  }
+}
+  
+
   
   // ============================================================
   // MÉTODOS AUXILIARES PARA UI
@@ -584,3 +784,4 @@ class DashboardProvider extends ChangeNotifier {
     return '';
   }
 }
+

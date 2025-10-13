@@ -25,4 +25,6 @@ urlpatterns = [
     
     # Perfil
     path('users/profile/', views.user_dashboard, name='user_profile'),
+
+
 ]

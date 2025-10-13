@@ -1,5 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import User
+from django.core.validators import MinValueValidator, MaxValueValidator
 
 class UserProfile(models.Model):
     # Campos existentes
@@ -34,8 +35,108 @@ class UserProfile(models.Model):
                               verbose_name='Sexo')
     height = models.FloatField(null=True, blank=True, verbose_name='Altura (cm)')
     
+    
+    # ============================================================
+    # 🆕 NOVOS CAMPOS - APENAS 6 ESSENCIAIS
+    # ============================================================
+    
+    # Frequência de treino
+    training_frequency = models.IntegerField(
+        default=3,
+        validators=[MinValueValidator(1), MaxValueValidator(7)],
+        help_text="Quantos dias por semana quer treinar"
+    )
+    
+    # Dias preferidos (sistema aprende automaticamente)
+    preferred_training_days = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="[0=Dom, 1=Seg, 2=Ter, 3=Qua, 4=Qui, 5=Sex, 6=Sáb]"
+    )
+    
+    # Descanso mínimo
+    min_rest_days_between_workouts = models.IntegerField(
+        default=1,
+        validators=[MinValueValidator(0), MaxValueValidator(3)],
+        help_text="Dias de descanso entre treinos"
+    )
+    
+    # Padrão aprendido (IA preenche automaticamente)
+    learned_training_pattern = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Padrão detectado automaticamente pelo sistema"
+    )
+    
+    last_pattern_analysis = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Última atualização do padrão"
+    )
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True, null=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    # ============================================================
+    # 🔧 MÉTODOS ÚTEIS (apenas 3 essenciais)
+    # ============================================================
+    
+    def should_rest_today(self, last_workout_date=None):
+        """
+        Verifica se deve descansar hoje
+        """
+        if not last_workout_date:
+            return False
+        
+        from datetime import datetime
+        days_since = (datetime.now().date() - last_workout_date).days
+        return days_since < self.min_rest_days_between_workouts
+    
+    def is_preferred_training_day(self, weekday=None):
+        """
+        Verifica se hoje é dia preferido
+        weekday: 0=Domingo, 6=Sábado
+        """
+        from datetime import datetime
+        
+        if not self.preferred_training_days:
+            return True  # Se vazio, qualquer dia é válido
+        
+        if weekday is None:
+            weekday = datetime.now().weekday()
+            weekday = (weekday + 1) % 7  # Converter para 0=Domingo
+        
+        return weekday in self.preferred_training_days
+    
+    def calculate_bmi(self):
+        """Calcula IMC"""
+        if self.current_weight and self.height:
+            height_m = self.height / 100
+            return round(self.current_weight / (height_m ** 2), 1)
+        return None
+    
+    def get_bmi_status(self):
+        """Retorna status do IMC"""
+        bmi = self.calculate_bmi()
+        if not bmi:
+            return None
+        
+        if bmi < 18.5:
+            return 'Abaixo do peso'
+        elif bmi < 25:
+            return 'Peso normal'
+        elif bmi < 30:
+            return 'Sobrepeso'
+        else:
+            return 'Obesidade'
+        
     def __str__(self):
         return f"Perfil - {self.user.username}"
+    
+    class Meta:
+        verbose_name = "Perfil do Usuário"
+        verbose_name_plural = "Perfis dos Usuários"
 
 class UserProgress(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE)
@@ -51,3 +152,5 @@ class DailyTip(models.Model):
     
     def __str__(self):
         return self.title
+    
+    

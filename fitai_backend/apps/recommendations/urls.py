@@ -19,4 +19,8 @@ urlpatterns = [
 
     # NOVA ROTA PARA CHATBOT
     path('generate-workout-from-chat/', views.generate_workout_from_conversation, name='generate_workout_from_chat'),
+
+
+    path('ai/daily-recommendation/', views.get_daily_ai_recommendation, name='daily-ai-recommendation'),
+    path('ai/daily-recommendation/refresh/', views.refresh_daily_recommendation, name='refresh-daily-recommendation'),
 ]

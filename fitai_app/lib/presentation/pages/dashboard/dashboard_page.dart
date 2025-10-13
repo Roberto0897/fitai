@@ -24,6 +24,9 @@ class _DashboardPageState extends State<DashboardPage> {
       // Carrega o perfil do usuário e dados do dashboard
       context.read<UserProfileProvider>().loadProfile();
       context.read<DashboardProvider>().loadDashboard();
+
+      // NOVO: Carregar recomendação inteligente
+      context.read<DashboardProvider>().loadSmartRecommendation();
     });
   }
 
@@ -73,6 +76,9 @@ class _DashboardPageState extends State<DashboardPage> {
     await Future.wait([
       context.read<UserProfileProvider>().loadProfile(),
       context.read<DashboardProvider>().loadDashboard(),
+
+      // NOVO: Recarregar recomendação ao fazer pull-to-refresh
+      context.read<DashboardProvider>().loadSmartRecommendation(),
     ]);
   }
 
@@ -292,205 +298,484 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
-  Widget _buildTodayWorkoutCard(DashboardProvider provider) {
-    final hasWorkout = provider.hasRecommendedWorkout;
-    final workoutName = provider.getRecommendedWorkoutName();
-    final workoutId = provider.getRecommendedWorkoutId();
+Widget _buildTodayWorkoutCard(DashboardProvider provider) {
+  // ✅ CORREÇÃO: Verificar se tem qualquer tipo de recomendação (workout OU descanso)
+  final hasRecommendation = provider.hasSmartRecommendation;
+  final analysis = provider.analysisData;
+  final workout = provider.smartRecommendation;
+  
+  // ✅ NOVO: Detectar se é recomendação de descanso
+  final shouldRest = analysis['recommendation_type'] == 'rest';
+  final isOffSchedule = analysis['recommendation_type'] == 'reschedule';
+  
+  // ✅ Definir título e ícone baseado no tipo
+  String title;
+  IconData iconData;
+  Color iconColor;
+  
+  if (shouldRest) {
+    title = 'Dia de Descanso';
+    iconData = Icons.bedtime;
+    iconColor = const Color(0xFF9C27B0); // Roxo
+  } else if (isOffSchedule) {
+    title = 'Fora do Cronograma';
+    iconData = Icons.schedule;
+    iconColor = const Color(0xFFFFC107); // Amarelo
+  } else if (hasRecommendation) {
+    title = 'Recomendação Inteligente';
+    iconData = Icons.auto_awesome;
+    iconColor = const Color(0xFF00BCD4); // Azul
+  } else {
+    title = 'Aguardando análise';
+    iconData = Icons.fitness_center;
+    iconColor = const Color(0xFF9E9E9E); // Cinza
+  }
+  
+  final workoutName = hasRecommendation && !shouldRest && !isOffSchedule
+      ? (workout['name'] ?? 'Treino Recomendado')
+      : shouldRest
+          ? 'Você merece descansar!'
+          : isOffSchedule
+              ? 'Não é seu dia de treino'
+              : 'Nenhuma recomendação ainda';
+  
+  final workoutId = hasRecommendation && !shouldRest && !isOffSchedule
+      ? workout['id']
+      : null;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(24),
-        decoration: BoxDecoration(
-          color: const Color(0xFF2A2A2A),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: const Color(0xFF00BCD4),
-            width: 1,
-          ),
+  return Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 20),
+    child: Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: const Color(0xFF2A2A2A),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: shouldRest
+              ? const Color(0xFF9C27B0)
+              : isOffSchedule
+                  ? const Color(0xFFFFC107)
+                  : hasRecommendation
+                      ? const Color(0xFF00BCD4)
+                      : const Color(0xFF424242),
+          width: 1.5,
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(
-                  Icons.fitness_center,
-                  color: Color(0xFF00BCD4),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: iconColor.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  iconData,
+                  color: iconColor,
                   size: 20,
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Sugestão Inteligente da FitAI',
-                        style: TextStyle(
-                          color: Color(0xFF9E9E9E),
-                          fontSize: 18,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      if (provider.isLoading)
-                        const SizedBox(
-                          height: 20,
-                          width: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                              Color(0xFF00BCD4),
-                            ),
-                          ),
-                        )
-                      else
-                        Text(
-                          workoutName,
-                          style: const TextStyle(
-                            fontFamily: 'JockeyOne',
-                            fontSize: 28,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                            letterSpacing: 1,
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: hasWorkout && workoutId != null
-                    ? () async {
-                        try {
-                          debugPrint('🔍 Carregando treino recomendado ID: $workoutId');
-                          
-                          // Buscar detalhes completos do treino
-                          final response = await ApiService.getWorkoutDetail(workoutId);
-                          
-                          debugPrint('📦 Resposta completa: $response');
-                          
-                          // 🔥 CORRIGIDO: Backend retorna dentro de "workout"
-                          final workoutDetails = response['workout'] ?? response;
-                          
-                          debugPrint('✅ Detalhes do treino: ${workoutDetails['name']}');
-                          
-                          // Validar dados essenciais
-                          if (workoutDetails['id'] == null) {
-                            throw Exception('ID do treino não encontrado na resposta');
-                          }
-                          
-                          // Contar exercícios corretamente
-                          int exerciseCount = 0;
-                          
-                          // Verificar se tem campo 'exercises' na raiz da resposta
-                          if (response['exercises'] != null && response['exercises'] is List) {
-                            exerciseCount = (response['exercises'] as List).length;
-                          } 
-                          // Ou se tem no workoutDetails
-                          else if (workoutDetails['exercises'] != null) {
-                            if (workoutDetails['exercises'] is List) {
-                              exerciseCount = (workoutDetails['exercises'] as List).length;
-                            } else if (workoutDetails['exercises'] is int) {
-                              exerciseCount = workoutDetails['exercises'];
-                            }
-                          }
-                          // Ou se tem 'total_exercises'
-                          else if (response['total_exercises'] != null) {
-                            exerciseCount = response['total_exercises'];
-                          }
-                          
-                          debugPrint('📊 Total de exercícios: $exerciseCount');
-                          
-                          // Garantir que valores numéricos sejam int
-                          final id = workoutDetails['id'] is int 
-                              ? workoutDetails['id'] 
-                              : int.tryParse(workoutDetails['id'].toString()) ?? 0;
-                          
-                          final duration = workoutDetails['estimated_duration'] is int
-                              ? workoutDetails['estimated_duration']
-                              : int.tryParse(workoutDetails['estimated_duration']?.toString() ?? '0') ?? 0;
-                          
-                          final calories = workoutDetails['calories_estimate'] is int
-                              ? workoutDetails['calories_estimate']
-                              : int.tryParse(workoutDetails['calories_estimate']?.toString() ?? '0') ?? 0;
-                          
-                          // Criar modelo de treino
-                          final workout = WorkoutModel(
-                            id: id,
-                            name: workoutDetails['name'] ?? 'Treino sem nome',
-                            description: workoutDetails['description'] ?? '',
-                            duration: duration,
-                            exercises: exerciseCount,
-                            difficulty: workoutDetails['difficulty_level'] ?? 'Iniciante',
-                            category: workoutDetails['workout_type'] ?? 'Geral',
-                            calories: calories,
-                          );
-                          
-                          debugPrint('✅ Modelo criado: ${workout.name} (ID: ${workout.id}, ${workout.exercises} exercícios)');
-                          
-                          if (mounted) {
-                            AppRouter.goToWorkoutDetail(workout: workout);
-                          }
-                        } catch (e, stackTrace) {
-                          debugPrint('❌ Erro ao carregar treino: $e');
-                          debugPrint('Stack trace: $stackTrace');
-                          
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('Erro ao carregar treino: ${e.toString()}'),
-                                backgroundColor: Colors.red,
-                                duration: const Duration(seconds: 4),
-                                action: SnackBarAction(
-                                  label: 'Ver Treinos',
-                                  textColor: Colors.white,
-                                  onPressed: () {
-                                    AppRouter.goToWorkouts();
-                                  },
-                                ),
-                              ),
-                            );
-                          }
-                        }
-                      }
-                    : null,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF00BCD4),
-                  foregroundColor: const Color(0xFF1A1A1A),
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  disabledBackgroundColor: const Color(0xFF424242),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Icon(Icons.play_arrow, size: 20),
-                    const SizedBox(width: 8),
                     Text(
-                      hasWorkout ? 'Começar' : 'Sem treino disponível',
+                      title,
                       style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF9E9E9E),
+                        fontSize: 14,
                       ),
                     ),
+                    const SizedBox(height: 4),
+                    if (provider.isLoading)
+                      Row(
+                        children: const [
+                          SizedBox(
+                            height: 16,
+                            width: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                Color(0xFF00BCD4),
+                              ),
+                            ),
+                          ),
+                          SizedBox(width: 8),
+                          Text(
+                            'Carregando...',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 16,
+                            ),
+                          ),
+                        ],
+                      )
+                    else
+                      Text(
+                        workoutName,
+                        style: TextStyle(
+                          fontFamily: 'JockeyOne',
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: hasRecommendation || shouldRest || isOffSchedule
+                              ? Colors.white
+                              : const Color(0xFF9E9E9E),
+                          letterSpacing: 1,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                   ],
                 ),
               ),
+            ],
+          ),
+          
+          // ✅ NOVO: Mostrar análise para TODOS os tipos de recomendação
+          if ((hasRecommendation || shouldRest || isOffSchedule) && !provider.isLoading) ...[
+            const SizedBox(height: 16),
+            
+            // Razão da recomendação
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: shouldRest
+                    ? const Color(0xFF9C27B0).withOpacity(0.1)
+                    : isOffSchedule
+                        ? const Color(0xFFFFC107).withOpacity(0.1)
+                        : const Color(0xFF00BCD4).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: shouldRest
+                      ? const Color(0xFF9C27B0).withOpacity(0.3)
+                      : isOffSchedule
+                          ? const Color(0xFFFFC107).withOpacity(0.3)
+                          : const Color(0xFF00BCD4).withOpacity(0.3),
+                  width: 1,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Text(
+                    provider.getRecommendationEmoji(),
+                    style: const TextStyle(fontSize: 18),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      provider.getFormattedReason(),
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            
+            const SizedBox(height: 12),
+            
+            // ✅ NOVO: Fatores de personalização (para todos os tipos)
+            if (provider.personalizationFactors.isNotEmpty) ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: Colors.white.withOpacity(0.1),
+                    width: 1,
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: const [
+                        Icon(
+                          Icons.info_outline,
+                          color: Color(0xFF00BCD4),
+                          size: 14,
+                        ),
+                        SizedBox(width: 6),
+                        Text(
+                          'Fatores considerados:',
+                          style: TextStyle(
+                            color: Color(0xFF9E9E9E),
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    ...provider.personalizationFactors.map((factor) {
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              '• ',
+                              style: TextStyle(
+                                color: Color(0xFF00BCD4),
+                                fontSize: 12,
+                              ),
+                            ),
+                            Expanded(
+                              child: Text(
+                                factor,
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+            
+            // Informações do treino (apenas se não for descanso)
+            if (!shouldRest && !isOffSchedule) ...[
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  if (workout['difficulty_level'] != null)
+                    _buildInfoChip(
+                      icon: '📊',
+                      label: workout['difficulty_level'],
+                    ),
+                  if (workout['estimated_duration'] != null)
+                    _buildInfoChip(
+                      icon: '⏱️',
+                      label: '${workout['estimated_duration']} min',
+                    ),
+                  if (workout['calories_estimate'] != null)
+                    _buildInfoChip(
+                      icon: '🔥',
+                      label: '~${workout['calories_estimate']} kcal',
+                    ),
+                ],
+              ),
+            ],
+          ],
+          
+          // Mensagem quando não há recomendação
+          if (!hasRecommendation && !shouldRest && !isOffSchedule && !provider.isLoading) ...[
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1A1A1A),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: const Color(0xFF424242),
+                  width: 1,
+                ),
+              ),
+              child: Row(
+                children: const [
+                  Icon(
+                    Icons.info_outline,
+                    color: Color(0xFF9E9E9E),
+                    size: 18,
+                  ),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Complete alguns treinos para receber recomendações personalizadas',
+                      style: TextStyle(
+                        color: Color(0xFF9E9E9E),
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
-        ),
+          
+          const SizedBox(height: 16),
+          
+          // ✅ NOVO: Botão adaptado ao tipo de recomendação
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: shouldRest || isOffSchedule
+                  ? () {
+                      // Se é descanso ou fora do cronograma, ir para treinos disponíveis
+                      AppRouter.goToWorkouts();
+                    }
+                  : hasRecommendation && workoutId != null
+                      ? () async {
+                          // Lógica original para carregar treino
+                          try {
+                            debugPrint('🔍 Carregando treino recomendado ID: $workoutId');
+                            
+                            final response = await ApiService.getWorkoutDetail(workoutId);
+                            final workoutDetails = response['workout'] ?? response;
+                            
+                            if (workoutDetails['id'] == null) {
+                              throw Exception('ID do treino não encontrado');
+                            }
+                            
+                            int exerciseCount = 0;
+                            if (response['exercises'] != null && response['exercises'] is List) {
+                              exerciseCount = (response['exercises'] as List).length;
+                            } else if (workoutDetails['exercises'] != null) {
+                              if (workoutDetails['exercises'] is List) {
+                                exerciseCount = (workoutDetails['exercises'] as List).length;
+                              } else if (workoutDetails['exercises'] is int) {
+                                exerciseCount = workoutDetails['exercises'];
+                              }
+                            } else if (response['total_exercises'] != null) {
+                              exerciseCount = response['total_exercises'];
+                            }
+                            
+                            final id = workoutDetails['id'] is int 
+                                ? workoutDetails['id'] 
+                                : int.tryParse(workoutDetails['id'].toString()) ?? 0;
+                            
+                            final duration = workoutDetails['estimated_duration'] is int
+                                ? workoutDetails['estimated_duration']
+                                : int.tryParse(workoutDetails['estimated_duration']?.toString() ?? '0') ?? 0;
+                            
+                            final calories = workoutDetails['calories_estimate'] is int
+                                ? workoutDetails['calories_estimate']
+                                : int.tryParse(workoutDetails['calories_estimate']?.toString() ?? '0') ?? 0;
+                            
+                            final workoutModel = WorkoutModel(
+                              id: id,
+                              name: workoutDetails['name'] ?? 'Treino sem nome',
+                              description: workoutDetails['description'] ?? '',
+                              duration: duration,
+                              exercises: exerciseCount,
+                              difficulty: workoutDetails['difficulty_level'] ?? 'Iniciante',
+                              category: workoutDetails['workout_type'] ?? 'Geral',
+                              calories: calories,
+                            );
+                            
+                            if (mounted) {
+                              AppRouter.goToWorkoutDetail(workout: workoutModel);
+                            }
+                          } catch (e, stackTrace) {
+                            debugPrint('❌ Erro ao carregar treino: $e');
+                            debugPrint('Stack trace: $stackTrace');
+                            
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Erro ao carregar treino: ${e.toString()}'),
+                                  backgroundColor: Colors.red,
+                                  duration: const Duration(seconds: 4),
+                                ),
+                              );
+                            }
+                          }
+                        }
+                      : () {
+                          AppRouter.goToWorkouts();
+                        },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: shouldRest
+                    ? const Color(0xFF9C27B0)
+                    : isOffSchedule
+                        ? const Color(0xFFFFC107)
+                        : hasRecommendation
+                            ? const Color(0xFF00BCD4)
+                            : const Color(0xFF424242),
+                foregroundColor: shouldRest || isOffSchedule || hasRecommendation
+                    ? Colors.white
+                    : const Color(0xFF9E9E9E),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    shouldRest
+                        ? Icons.self_improvement
+                        : isOffSchedule
+                            ? Icons.calendar_today
+                            : hasRecommendation
+                                ? Icons.play_arrow
+                                : Icons.search,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    shouldRest
+                        ? 'Aproveitar o descanso'
+                        : isOffSchedule
+                            ? 'Ver dias preferidos'
+                            : hasRecommendation
+                                ? 'Começar Treino'
+                                : 'Ver Treinos Disponíveis',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
-    );
-  }
+    ),
+  );
+}
+// Widget auxiliar para chips de informação
+Widget _buildInfoChip({required String icon, required String label}) {
+  return Container(
+    padding: const EdgeInsets.symmetric(
+      horizontal: 8,
+      vertical: 4,
+    ),
+    decoration: BoxDecoration(
+      color: Colors.white.withOpacity(0.05),
+      borderRadius: BorderRadius.circular(6),
+      border: Border.all(
+        color: Colors.white.withOpacity(0.1),
+        width: 1,
+      ),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          icon,
+          style: const TextStyle(fontSize: 12),
+        ),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: const TextStyle(
+            color: Colors.white70,
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    ),
+  );
+}
 
   Widget _buildActionCardsGrid(DashboardProvider provider) {
     return Padding(
@@ -658,112 +943,213 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 
   Widget _buildHistoryCard(DashboardProvider provider) {
-    return Flexible(
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: const Color(0xFF2A2A2A),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: const Color(0xFF00BCD4),
-            width: 1.5,
-          ),
+  return Flexible(
+    child: Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF2A2A2A),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: const Color(0xFF00BCD4),
+          width: 1.5,
         ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF00BCD4).withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(
-                    Icons.lightbulb_outline,
-                    color: Color(0xFF00BCD4),
-                    size: 18,
-                  ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ✅ CABEÇALHO
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF00BCD4).withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(8),
                 ),
-                const SizedBox(width: 8),
+                child: const Icon(
+                  Icons.lightbulb_outline,
+                  color: Color(0xFF00BCD4),
+                  size: 18,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Recomendações IA',
+                  style: GoogleFonts.jockeyOne(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          
+          // ✅ CONTEÚDO PRINCIPAL (SEM SCROLL - APENAS FLEXIBLE)
+          Flexible(
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1A1A1A),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: const Color(0xFF00BCD4).withOpacity(0.3),
+                  width: 1,
+                ),
+              ),
+              child: provider.isLoading
+                  ? const Center(
+                      child: SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            Color(0xFF00BCD4),
+                          ),
+                        ),
+                      ),
+                    )
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // ✅ ÍCONE + TÍTULO COMPLETO
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(
+                              Icons.fitness_center,
+                              color: Color(0xFF00BCD4),
+                              size: 18,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                provider.aiRecommendationType == 'rest'
+                                    ? 'Dia de Descanso'
+                                    : provider.aiRecommendationType == 'motivation'
+                                        ? 'Motivação do Dia'
+                                        : provider.aiRecommendationType == 'active_recovery'
+                                            ? 'Recuperação Ativa'
+                                            : 'Seu Treino de Hoje',
+                                style: GoogleFonts.jockeyOne(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        
+                        // ✅ MENSAGEM (COM maxLines PARA EVITAR CRESCIMENTO EXCESSIVO)
+                        Flexible(
+                          child: Text(
+                            provider.aiRecommendation.isNotEmpty
+                                ? provider.aiRecommendation
+                                : 'Mantenha a consistência nos treinos!',
+                            style: GoogleFonts.jockeyOne(
+                              color: Colors.white70,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w400,
+                              height: 1.5,
+                            ),
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        
+                        // ✅ EMOJI + CONTEXTO
+                        if (provider.hasDailyAIRecommendation) ...[
+                          const SizedBox(height: 10),
+                          Row(
+                            children: [
+                              Text(
+                                provider.aiRecommendationEmoji,
+                                style: const TextStyle(fontSize: 20),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  provider.aiRecommendationType == 'rest'
+                                      ? 'Aproveite para recuperação'
+                                      : provider.aiRecommendationType == 'active_recovery'
+                                          ? 'Recuperação leve e eficaz'
+                                          : provider.aiRecommendationType == 'workout'
+                                              ? 'Hora de treinar'
+                                              : 'Continue motivado',
+                                  style: GoogleFonts.jockeyOne(
+                                    color: Colors.white54,
+                                    fontSize: 12,
+                                    fontStyle: FontStyle.italic,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ],
+                    ),
+            ),
+          ),
+          
+          const SizedBox(height: 10),
+          
+          // ✅ RODAPÉ DINÂMICO
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.05),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(
+                color: Colors.white.withOpacity(0.1),
+                width: 1,
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  provider.daysSinceLastWorkout == 0
+                      ? Icons.check_circle
+                      : provider.daysSinceLastWorkout == 1
+                          ? Icons.schedule
+                          : Icons.trending_down,
+                  color: provider.daysSinceLastWorkout == 0
+                      ? const Color(0xFF4CAF50)
+                      : provider.daysSinceLastWorkout == 1
+                          ? const Color(0xFFFFC107)
+                          : const Color(0xFFFF6B6B),
+                  size: 14,
+                ),
+                const SizedBox(width: 6),
                 Expanded(
                   child: Text(
-                    'Recomendações IA',
+                    provider.daysSinceLastWorkoutText,
                     style: GoogleFonts.jockeyOne(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
+                      color: Colors.white70,
+                      fontSize: 11,
                     ),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-            Expanded(
-              child: Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1A1A1A),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: const Color(0xFF00BCD4).withOpacity(0.3),
-                    width: 1,
-                  ),
-                ),
-                child: provider.isLoading
-                    ? const Center(
-                        child: SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                              Color(0xFF00BCD4),
-                            ),
-                          ),
-                        ),
-                      )
-                    : Row(
-                        children: [
-                          const Icon(
-                            Icons.fitness_center,
-                            color: Color(0xFF00BCD4),
-                            size: 16,
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              provider.aiRecommendation,
-                              style: GoogleFonts.jockeyOne(
-                                color: Colors.white,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w400,
-                              ),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              provider.daysSinceLastWorkoutText,
-              style: GoogleFonts.jockeyOne(
-                color: Colors.grey[500],
-                fontSize: 11,
-              ),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildBottomNavigation() {
     return Container(

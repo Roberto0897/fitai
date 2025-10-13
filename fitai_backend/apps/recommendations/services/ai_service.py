@@ -715,3 +715,330 @@ RESPONDA APENAS COM JSON VÁLIDO (sem markdown):
 }}
 
 Seja específico, honesto e construtivo baseado nos dados fornecidos."""
+    
+
+    def generate_daily_recommendation(self, user_profile: UserProfile, 
+                                    workout_history: List[Dict] = None) -> Optional[Dict]:
+        """
+        Gera recomendação diária personalizada usando IA generativa
+        Retorna uma recomendação específica baseada no histórico e perfil do usuário
+        """
+        if not self.is_available or cache.get("gemini_temp_disabled"):
+            return None
+        
+        try:
+            # Coletar contexto do usuário
+            user_context = self._get_user_context(user_profile.user)
+            
+            # Analisar histórico recente
+            history_analysis = self._analyze_recent_workout_history(user_profile.user, workout_history)
+            
+            # Construir prompt específico para recomendação
+            prompt = self._build_daily_recommendation_prompt(
+                user_profile, 
+                user_context, 
+                history_analysis
+            )
+            
+            response = self._make_gemini_request(prompt)
+            
+            if response:
+                # Limpar markdown
+                response = response.strip()
+                if response.startswith('```json'):
+                    response = response[7:]
+                if response.endswith('```'):
+                    response = response[:-3]
+                response = response.strip()
+                
+                recommendation = json.loads(response)
+                
+                # Validar e enriquecer recomendação
+                validated_recommendation = self._validate_daily_recommendation(recommendation)
+                
+                if validated_recommendation:
+                    validated_recommendation['metadata'] = {
+                        'generated_at': datetime.now().isoformat(),
+                        'model': settings.GEMINI_MODEL,
+                        'confidence': self._calculate_recommendation_confidence(history_analysis),
+                        'personalization_factors': [
+                            f"goal: {user_profile.goal}",
+                            f"level: {user_profile.activity_level}",
+                            f"workouts_this_week: {history_analysis.get('workouts_this_week', 0)}",
+                            f"days_since_last: {history_analysis.get('days_since_last_workout', 0)}"
+                        ]
+                    }
+                    
+                    return validated_recommendation
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Error generating daily recommendation: {e}")
+            return None
+
+    def _analyze_recent_workout_history(self, user, workout_history: List[Dict] = None) -> Dict:
+        """Analisa histórico recente de treinos para contexto"""
+        try:
+            from datetime import timedelta
+            from django.utils import timezone
+            from django.db.models import Count
+            
+            now = timezone.now()
+            one_week_ago = now - timedelta(days=7)
+            
+            # Se o histórico foi passado, usar ele
+            if workout_history:
+                workouts_this_week = len([
+                    w for w in workout_history 
+                    if datetime.fromisoformat(w.get('date', '')) > one_week_ago
+                ])
+                
+                if workout_history:
+                    last_workout_date = datetime.fromisoformat(workout_history[0].get('date', ''))
+                    days_since_last = (now - last_workout_date).days
+                else:
+                    days_since_last = 999
+                
+                # Analisar grupos musculares trabalhados
+                muscle_groups_worked = {}
+                for workout in workout_history[:10]:
+                    for group in workout.get('muscle_groups', []):
+                        muscle_groups_worked[group] = muscle_groups_worked.get(group, 0) + 1
+            else:
+                # Buscar do banco
+                recent_sessions = WorkoutSession.objects.filter(
+                    user=user,
+                    completed=True,
+                    completed_at__gte=one_week_ago
+                )
+                
+                workouts_this_week = recent_sessions.count()
+                
+                last_session = WorkoutSession.objects.filter(
+                    user=user, completed=True
+                ).order_by('-completed_at').first()
+                
+                days_since_last = (now - last_session.completed_at).days if last_session else 999
+                
+                # Grupos musculares trabalhados
+                muscle_groups_worked = {}
+                exercise_logs = ExerciseLog.objects.filter(
+                    session__user=user,
+                    session__completed=True,
+                    session__completed_at__gte=one_week_ago
+                ).values('workout_exercise__exercise__muscle_group').annotate(
+                    count=Count('id')
+                )
+                
+                for log in exercise_logs:
+                    group = log['workout_exercise__exercise__muscle_group']
+                    if group:
+                        muscle_groups_worked[group] = log['count']
+            
+            # Determinar grupos menos trabalhados
+            all_groups = ['chest', 'back', 'shoulders', 'arms', 'legs', 'abs', 'cardio']
+            underworked_groups = [g for g in all_groups if muscle_groups_worked.get(g, 0) < 2]
+            
+            # Identificar padrão de treino
+            weekday = now.weekday()  # 0=Monday, 6=Sunday
+            
+            return {
+                'workouts_this_week': workouts_this_week,
+                'days_since_last_workout': days_since_last,
+                'muscle_groups_worked': muscle_groups_worked,
+                'underworked_groups': underworked_groups,
+                'is_weekend': weekday in [5, 6],
+                'current_weekday': weekday,
+                'weekly_frequency': 'high' if workouts_this_week >= 4 else 'moderate' if workouts_this_week >= 2 else 'low'
+            }
+            
+        except Exception as e:
+            logger.error(f"Error analyzing workout history: {e}")
+            return {
+                'workouts_this_week': 0,
+                'days_since_last_workout': 999,
+                'muscle_groups_worked': {},
+                'underworked_groups': [],
+                'is_weekend': False,
+                'weekly_frequency': 'unknown'
+            }
+
+    def _build_daily_recommendation_prompt(self, profile: UserProfile,context: Dict, history: Dict) -> str:
+        """Constrói prompt específico para recomendação diária"""
+        
+        weekday_names = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo']
+        current_day = weekday_names[history.get('current_weekday', 0)]
+            
+            # 🔥 NOVO: Identificar grupos musculares sobrecarregados vs negligenciados
+        muscle_groups_worked = history.get('muscle_groups_worked', {})
+            
+            # Grupos muito trabalhados (precisam descanso)
+        overtrained_groups = [
+                group for group, count in muscle_groups_worked.items() 
+                if count >= 3  # 3+ treinos na semana
+            ]
+            
+            # Grupos pouco trabalhados (precisam treino)
+        underworked_groups = history.get('underworked_groups', [])
+            
+        return f"""Você é um personal trainer expert. Crie UMA recomendação específica para HOJE.
+
+PERFIL DO USUÁRIO:
+- Nome: {profile.user.first_name or 'Usuário'}
+- Objetivo: {profile.goal or 'fitness geral'}
+- Nível: {profile.activity_level or 'iniciante'}
+
+CONTEXTO ATUAL:
+- Dia: {current_day}
+- Treinos esta semana: {history.get('workouts_this_week', 0)}
+- Dias desde último treino: {history.get('days_since_last_workout', 0)}
+- Frequência semanal: {history.get('weekly_frequency', 'baixa')}
+- É fim de semana: {'Sim' if history.get('is_weekend') else 'Não'}
+
+ANÁLISE MUSCULAR (IMPORTANTE):
+- Grupos SOBRECARREGADOS (precisam descanso): {', '.join(overtrained_groups) or 'nenhum'}
+- Grupos NEGLIGENCIADOS (precisam treino): {', '.join(underworked_groups) or 'nenhum'}
+- Todos os grupos trabalhados: {', '.join(muscle_groups_worked.keys()) or 'nenhum'}
+
+REGRAS DE RECOMENDAÇÃO (SIGA RIGOROSAMENTE):
+
+1. **OVERTRAINING (5+ treinos na semana)**:
+   - Se houver grupos sobrecarregados → "active_recovery" focado NO GRUPO SOBRECARREGADO
+   - Exemplo: Se treinou muito COSTAS → sugerir recuperação ativa para COSTAS
+   - NUNCA sugerir recuperação para grupo que NÃO foi treinado
+
+2. **DESEQUILÍBRIO MUSCULAR**:
+   - Se houver grupos negligenciados → "workout" focado NO GRUPO NEGLIGENCIADO
+   - Exemplo: Se NÃO treinou PEITO → sugerir treino de PEITO (não recuperação!)
+   - Intensidade leve/moderada se já treinou muito na semana
+
+3. **PRIORIZAÇÃO**:
+   a) Se treinou 5+ vezes E há grupo sobrecarregado → recuperação ativa desse grupo
+   b) Se treinou 3-4 vezes E há grupo negligenciado → treino leve do grupo negligenciado
+   c) Se treinou 1-2 vezes → encorajar continuidade
+   d) Se treinou 0 vezes → motivar a começar
+
+4. **FIM DE SEMANA**:
+   - Domingo/Sábado → preferir descanso total ou atividade leve
+   - Mas se usuário quer treinar, sugerir grupo negligenciado
+
+RESPONDA APENAS COM JSON VÁLIDO (sem markdown):
+{{
+    "recommendation_type": "workout|rest|active_recovery|motivation",
+    "title": "Título curto e direto (máx 40 caracteres)",
+    "message": "Mensagem motivacional específica para hoje (máx 120 caracteres)",
+    "focus_area": "chest|back|legs|cardio|recovery|full_body",
+    "reasoning": "Explicação CLARA do porquê desta recomendação (mencionar grupo muscular específico)",
+    "intensity": "low|moderate|high",
+    "suggested_duration": 30,
+    "motivational_tip": "Dica prática e encorajadora (máx 80 caracteres)",
+    "emoji": "emoji apropriado"
+}}
+
+EXEMPLOS DE RECOMENDAÇÕES CORRETAS:
+
+Exemplo 1 - Overtraining de COSTAS:
+{{
+    "recommendation_type": "active_recovery",
+    "title": "Recuperação Ativa para as Costas",
+    "message": "{profile.user.first_name or 'Usuário'}, suas costas trabalharam muito! Hora de recuperação leve.",
+    "focus_area": "back",
+    "reasoning": "Você treinou costas {muscle_groups_worked.get('back', 0)} vezes esta semana, precisa de descanso ativo",
+    "intensity": "low",
+    "suggested_duration": 20,
+    "motivational_tip": "Alongamentos e mobilidade farão maravilhas!",
+    "emoji": "🧘"
+}}
+
+Exemplo 2 - PEITO negligenciado:
+{{
+    "recommendation_type": "workout",
+    "title": "Hora de Treinar o Peito",
+    "message": "{profile.user.first_name or 'Usuário'}, vamos equilibrar o treino com foco no peito hoje!",
+    "focus_area": "chest",
+    "reasoning": "Você não treinou peito esta semana, vamos balancear os grupos musculares",
+    "intensity": "moderate",
+    "suggested_duration": 35,
+    "motivational_tip": "Treino equilibrado = resultados melhores!",
+    "emoji": "💪"
+}}
+
+Exemplo 3 - Descanso total:
+{{
+    "recommendation_type": "rest",
+    "title": "Dia de Descanso Merecido",
+    "message": "{profile.user.first_name or 'Usuário'}, você treinou {history.get('workouts_this_week', 0)} vezes! Descanse hoje.",
+    "focus_area": "recovery",
+    "reasoning": "Meta semanal atingida, corpo precisa recuperar",
+    "intensity": "low",
+    "suggested_duration": 0,
+    "motivational_tip": "Músculos crescem no descanso!",
+    "emoji": "😴"
+}}
+
+IMPORTANTE:
+- Seja MUITO específico sobre qual grupo muscular
+- NUNCA sugira recuperação de grupo que NÃO foi treinado
+- Se sugerir "active_recovery", o focus_area DEVE ser o grupo sobrecarregado
+- Se sugerir "workout", o focus_area DEVE ser grupo negligenciado ou balanceamento
+- Use o nome do usuário na mensagem
+- Considere o padrão semanal real"""
+
+    def _validate_daily_recommendation(self, recommendation: Dict) -> Optional[Dict]:
+        """Valida recomendação diária"""
+        try:
+            required_fields = ['recommendation_type', 'title', 'message']
+            if not all(field in recommendation for field in required_fields):
+                logger.error("Missing required fields in daily recommendation")
+                return None
+            
+            # Validar tipo
+            valid_types = ['workout', 'rest', 'active_recovery', 'motivation']
+            if recommendation['recommendation_type'] not in valid_types:
+                recommendation['recommendation_type'] = 'workout'
+            
+            # Garantir campos opcionais
+            recommendation.setdefault('focus_area', 'full_body')
+            recommendation.setdefault('intensity', 'moderate')
+            recommendation.setdefault('suggested_duration', 30)
+            recommendation.setdefault('emoji', '💪')
+            recommendation.setdefault('reasoning', 'Recomendação baseada no seu perfil')
+            recommendation.setdefault('motivational_tip', 'Continue firme!')
+            
+            # Limitar tamanhos
+            recommendation['title'] = recommendation['title'][:60]
+            recommendation['message'] = recommendation['message'][:150]
+            recommendation['motivational_tip'] = recommendation['motivational_tip'][:100]
+            
+            return recommendation
+            
+        except Exception as e:
+            logger.error(f"Error validating daily recommendation: {e}")
+            return None
+
+    def _calculate_recommendation_confidence(self, history: Dict) -> float:
+        """Calcula confiança da recomendação (0-1)"""
+        try:
+            confidence = 0.5  # Base
+            
+            # Mais treinos = mais confiança
+            workouts = history.get('workouts_this_week', 0)
+            if workouts >= 3:
+                confidence += 0.3
+            elif workouts >= 1:
+                confidence += 0.15
+            
+            # Dados recentes = mais confiança
+            days_since = history.get('days_since_last_workout', 999)
+            if days_since <= 2:
+                confidence += 0.2
+            elif days_since <= 7:
+                confidence += 0.1
+            
+            return min(1.0, confidence)
+            
+        except Exception:
+            return 0.5
+        
+        
