@@ -478,6 +478,34 @@ class ApiService {
     }
   }
   
+  /// Buscar sessão ativa de um treino específico
+static Future<Map<String, dynamic>?> getActiveSessionByWorkout(int workoutId) async {
+  try {
+    print('🔍 Buscando sessão ativa do workout $workoutId...');
+    
+    // Buscar todas as sessões ativas do usuário
+    final response = await get('/workouts/sessions/active/');
+    
+    if (response == null) return null;
+    
+    // Verificar se é do treino específico
+    if (response['workout_id'] == workoutId) {
+      print('✅ Sessão ativa encontrada para workout $workoutId');
+      return response;
+    }
+    
+    print('ℹ️ Sessão ativa encontrada, mas é de outro treino');
+    return null;
+    
+  } catch (e) {
+    if (e is ApiException && e.statusCode == 404) {
+      print('ℹ️ Nenhuma sessão ativa para workout $workoutId');
+      return null;
+    }
+    print('❌ Erro ao buscar sessão: $e');
+    return null;
+  }
+}
   /// Histórico de treinos
   static Future<Map<String, dynamic>> getWorkoutHistory() async {
     return await get('/workouts/sessions/history/');
@@ -587,14 +615,59 @@ class ApiService {
     });
   }
 
-  /// Atualizar treino personalizado
+ 
+
+  /// Buscar treino completo para edição (workout + exercícios)
+  static Future<Map<String, dynamic>> getWorkoutForEditing(int workoutId) async {
+    return await get('/workouts/$workoutId/fetch/');
+  }
+
+  /// Editar treino completo (workout + exercícios)
+  static Future<Map<String, dynamic>> editWorkoutComplete(
+    int workoutId,
+    Map<String, dynamic> data,
+  ) async {
+    return await put('/workouts/$workoutId/edit/', data);
+  }
+
+  /// Listar exercícios disponíveis para adicionar ao treino
+  static Future<Map<String, dynamic>> getAvailableExercisesForEditing({
+    String? muscleGroup,
+    String? difficultyLevel,
+    String? search,
+  }) async {
+    final queryParams = <String, String>{};
+    
+    if (muscleGroup != null && muscleGroup != 'all') {
+      queryParams['muscle_group'] = muscleGroup;
+    }
+    
+    if (difficultyLevel != null && difficultyLevel != 'all') {
+      queryParams['difficulty_level'] = difficultyLevel;
+    }
+    
+    if (search != null && search.isNotEmpty) {
+      queryParams['search'] = search;
+    }
+    
+    final queryString = queryParams.entries
+        .map((e) => '${e.key}=${Uri.encodeComponent(e.value)}')
+        .join('&');
+    
+    final url = queryString.isEmpty
+        ? '/exercises/available/'
+        : '/exercises/available/?$queryString';
+    
+    return await get(url);
+  }
+
+  /// Atualizar treino personalizado (MANTÉM O EXISTENTE)
   static Future<Map<String, dynamic>> updateWorkout(
     int workoutId,
     Map<String, dynamic> data,
   ) async {
     return await put('/workouts/$workoutId/update/', data);
   }
-
   /// Deletar treino personalizado
   static Future<Map<String, dynamic>> deleteWorkout(int workoutId) async {
     return await delete('/workouts/$workoutId/delete/');

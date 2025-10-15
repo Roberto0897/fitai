@@ -27,7 +27,8 @@ def list_workouts(request):
    # workouts = Workout.objects.all()
    # SÓ TREINOS PÚBLICOS (catálogo)
     workouts = Workout.objects.filter(
-        is_personalized=False  # Exclui TODOS os treinos personalizados
+        is_personalized=False,  # Exclui TODOS os treinos personalizados
+        is_active=True  
     )
     data = []
     
@@ -63,7 +64,7 @@ def recommended_workouts(request):
         # Filtros baseados no perfil
         #filters = Q(is_recommended=True)
         #  SÓ meus treinos IA
-        filters = Q(is_recommended=True) & Q(created_by_user=request.user)#alteracao 08/10
+        filters = Q(is_recommended=True) & Q(created_by_user=request.user) & Q(is_active=True)#alteracao 08/10
         
         # Filtrar por nível de atividade
         if profile.activity_level:
@@ -1028,7 +1029,8 @@ def my_personalized_workouts(request):
     """Lista apenas treinos personalizados criados pelo usuário"""
     workouts = Workout.objects.filter(
         is_personalized=True,
-        created_by_user=request.user
+        created_by_user=request.user,
+        is_active=True
     ).order_by('-created_at')
     
     data = []
@@ -1141,33 +1143,603 @@ def update_personalized_workout(request, workout_id):
             {"error": "Treino não encontrado"},
             status=status.HTTP_404_NOT_FOUND
         )
+# ============================================================
+# 🔧 EDITAR TREINO PERSONALIZADO - ADICIONAR AO views.py
+# ============================================================
 
-@api_view(['DELETE'])
+from django.db.models import Max
+
+@api_view(['GET'])
 @permission_classes([IsAuthenticated])
-def delete_personalized_workout(request, workout_id):
-    """Deleta treino personalizado (apenas do próprio usuário)"""
+def get_workout_for_editing(request, workout_id):
+    """
+    🔍 Busca treino completo para edição
+    Retorna todos os dados incluindo exercícios
+    """
     try:
         workout = Workout.objects.get(id=workout_id)
         
-        # Verificar permissão
-        if not workout.is_personalized or workout.created_by_user != request.user:
-            return Response(
-                {"error": "Você não tem permissão para deletar este treino"},
-                status=status.HTTP_403_FORBIDDEN
-            )
+        # ============================================================
+        # VALIDAÇÃO: VERIFICAR PERMISSÕES
+        # ============================================================
         
-        workout_name = workout.name
-        workout.delete()
+        if workout.is_personalized and workout.created_by_user != request.user:
+            return Response({
+                'error': 'Você não tem permissão para visualizar este treino',
+                'owner': workout.created_by_user.username if workout.created_by_user else 'Sistema'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        # ============================================================
+        # BUSCAR EXERCÍCIOS DO TREINO
+        # ============================================================
+        
+        workout_exercises = WorkoutExercise.objects.filter(
+            workout=workout
+        ).select_related('exercise').order_by('order_in_workout')
+        
+        exercises_data = []
+        for we in workout_exercises:
+            exercises_data.append({
+                'id': we.id,
+                'exercise_id': we.exercise.id,
+                'exercise_name': we.exercise.name,
+                'exercise_description': we.exercise.description,
+                'muscle_group': we.exercise.muscle_group,
+                'difficulty_level': we.exercise.difficulty_level,
+                'equipment_needed': we.exercise.equipment_needed,
+                'duration_minutes': we.exercise.duration_minutes,
+                'video_url': we.exercise.video_url,
+               # 'image_url': we.exercise.image_url,
+                # Configurações no treino
+                'sets': we.sets,
+                'reps': we.reps,
+                'weight': we.weight,
+                'rest_time': we.rest_time,
+                'order_in_workout': we.order_in_workout,
+                'notes': we.notes or '',
+            })
+        
+        print(f'✅ Treino {workout_id} carregado para edição')
+        print(f'   Exercícios: {len(exercises_data)}')
         
         return Response({
-            'message': f'Treino "{workout_name}" deletado com sucesso'
+            'success': True,
+            'workout': {
+                'id': workout.id,
+                'name': workout.name,
+                'description': workout.description,
+                'difficulty_level': workout.difficulty_level,
+                'estimated_duration': workout.estimated_duration,
+                'target_muscle_groups': workout.target_muscle_groups,
+                'equipment_needed': workout.equipment_needed,
+                'calories_estimate': workout.calories_estimate,
+                'workout_type': workout.workout_type,
+                'is_personalized': workout.is_personalized,
+                'is_active': workout.is_active,
+                'created_at': workout.created_at,
+                'created_by': workout.created_by_user.username if workout.created_by_user else None
+            },
+            'exercises': exercises_data,
+            'total_exercises': len(exercises_data)
         })
         
     except Workout.DoesNotExist:
-        return Response(
-            {"error": "Treino não encontrado"},
-            status=status.HTTP_404_NOT_FOUND
+        return Response({
+            'error': 'Treino não encontrado'
+        }, status=status.HTTP_404_NOT_FOUND)
+    
+    except Exception as e:
+        print(f'❌ Erro ao buscar treino: {str(e)}')
+        import traceback
+        traceback.print_exc()
+        
+        return Response({
+            'error': 'Erro ao buscar treino',
+            'details': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def edit_workout_complete(request, workout_id):
+    """
+    ✏️ EDIÇÃO COMPLETA: Atualiza treino e seus exercícios
+    
+    Body esperado:
+    {
+      "workout": { name, description, difficulty_level, ... },
+      "exercises_to_add": [ { exercise_id, sets, reps, ... } ],
+      "exercises_to_update": [ { id, sets, reps, ... } ],
+      "exercises_to_remove": [ workout_exercise_id_1, workout_exercise_id_2 ]
+    }
+    """
+    try:
+        workout = Workout.objects.get(id=workout_id)
+        
+        # ============================================================
+        # VALIDAÇÃO 1: VERIFICAR PERMISSÕES
+        # ============================================================
+        
+        if not workout.is_personalized or workout.created_by_user != request.user:
+            return Response({
+                'error': 'Você não tem permissão para editar este treino',
+                'owner': workout.created_by_user.username if workout.created_by_user else 'Sistema'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        # ============================================================
+        # VALIDAÇÃO 2: VERIFICAR SE ESTÁ EM SESSÃO ATIVA
+        # ============================================================
+        
+        active_session = WorkoutSession.objects.filter(
+            workout=workout,
+            completed=False
+        ).first()
+        
+        if active_session:
+            return Response({
+                'error': 'Não é possível editar este treino',
+                'reason': 'Existe uma sessão ativa em andamento',
+                'active_session_id': active_session.id,
+                'started_at': active_session.started_at,
+                'suggestion': 'Cancele ou complete a sessão antes de editar'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # ============================================================
+        # ATUALIZAR DADOS DO TREINO
+        # ============================================================
+        
+        workout_data = request.data.get('workout', {})
+        
+        if workout_data:
+            workout.name = workout_data.get('name', workout.name)
+            workout.description = workout_data.get('description', workout.description)
+            workout.difficulty_level = workout_data.get('difficulty_level', workout.difficulty_level)
+            workout.estimated_duration = workout_data.get('estimated_duration', workout.estimated_duration)
+            workout.target_muscle_groups = workout_data.get('target_muscle_groups', workout.target_muscle_groups)
+            workout.equipment_needed = workout_data.get('equipment_needed', workout.equipment_needed)
+            workout.calories_estimate = workout_data.get('calories_estimate', workout.calories_estimate)
+            workout.workout_type = workout_data.get('workout_type', workout.workout_type)
+            
+            workout.save()
+            print(f'✅ Treino atualizado: {workout.name}')
+        
+        # ============================================================
+        # REMOVER EXERCÍCIOS
+        # ============================================================
+        
+        exercises_to_remove = request.data.get('exercises_to_remove', [])
+        removed_count = 0
+        
+        for exercise_id in exercises_to_remove:
+            try:
+                we = WorkoutExercise.objects.get(
+                    id=exercise_id,
+                    workout=workout
+                )
+                exercise_name = we.exercise.name
+                we.delete()
+                removed_count += 1
+                print(f'  🗑️ Removido: {exercise_name}')
+            except WorkoutExercise.DoesNotExist:
+                print(f'  ⚠️ Exercício {exercise_id} não encontrado')
+                continue
+        
+        # ============================================================
+        # ATUALIZAR EXERCÍCIOS EXISTENTES
+        # ============================================================
+        
+        exercises_to_update = request.data.get('exercises_to_update', [])
+        updated_count = 0
+        
+        for ex_data in exercises_to_update:
+            exercise_id = ex_data.get('id')
+            
+            try:
+                we = WorkoutExercise.objects.get(
+                    id=exercise_id,
+                    workout=workout
+                )
+                
+                # Atualizar campos fornecidos
+                if 'sets' in ex_data:
+                    we.sets = ex_data['sets']
+                if 'reps' in ex_data:
+                    we.reps = ex_data['reps']
+                if 'weight' in ex_data:
+                    we.weight = ex_data['weight']
+                if 'rest_time' in ex_data:
+                    we.rest_time = ex_data['rest_time']
+                if 'order_in_workout' in ex_data:
+                    we.order_in_workout = ex_data['order_in_workout']
+                if 'notes' in ex_data:
+                    we.notes = ex_data['notes']
+                
+                we.save()
+                updated_count += 1
+                print(f'  ✏️ Atualizado: {we.exercise.name}')
+                
+            except WorkoutExercise.DoesNotExist:
+                print(f'  ⚠️ Exercício {exercise_id} não encontrado')
+                continue
+        
+        # ============================================================
+        # ADICIONAR NOVOS EXERCÍCIOS
+        # ============================================================
+        
+        exercises_to_add = request.data.get('exercises_to_add', [])
+        added_count = 0
+        
+        for ex_data in exercises_to_add:
+            exercise_id = ex_data.get('exercise_id')
+            
+            if not exercise_id:
+                print(f'  ⚠️ exercise_id ausente')
+                continue
+            
+            try:
+                exercise = Exercise.objects.get(id=exercise_id)
+                
+                # Calcular ordem se não fornecida
+                order = ex_data.get('order_in_workout')
+                if not order:
+                    max_order = WorkoutExercise.objects.filter(
+                        workout=workout
+                    ).aggregate(Max('order_in_workout'))['order_in_workout__max'] or 0
+                    order = max_order + 1
+                
+                we = WorkoutExercise.objects.create(
+                    workout=workout,
+                    exercise=exercise,
+                    sets=ex_data.get('sets', 3),
+                    reps=ex_data.get('reps', '10'),
+                    weight=ex_data.get('weight'),
+                    rest_time=ex_data.get('rest_time', 60),
+                    order_in_workout=order,
+                    notes=ex_data.get('notes', '')
+                )
+                
+                added_count += 1
+                print(f'  ➕ Adicionado: {exercise.name}')
+                
+            except Exercise.DoesNotExist:
+                print(f'  ⚠️ Exercício {exercise_id} não encontrado no banco')
+                continue
+        
+        # ============================================================
+        # RESPOSTA COM RESUMO
+        # ============================================================
+        
+        # Recarregar exercícios do treino
+        updated_exercises = WorkoutExercise.objects.filter(
+            workout=workout
+        ).select_related('exercise').order_by('order_in_workout')
+        
+        exercises_data = []
+        for we in updated_exercises:
+            exercises_data.append({
+                'id': we.id,
+                'exercise_id': we.exercise.id,
+                'exercise_name': we.exercise.name,
+                'muscle_group': we.exercise.muscle_group,
+                'sets': we.sets,
+                'reps': we.reps,
+                'weight': we.weight,
+                'rest_time': we.rest_time,
+                'order': we.order_in_workout
+            })
+        
+        print(f'✅ Edição completa do treino {workout_id}:')
+        print(f'   ➕ Adicionados: {added_count}')
+        print(f'   ✏️ Atualizados: {updated_count}')
+        print(f'   🗑️ Removidos: {removed_count}')
+        print(f'   📊 Total final: {len(exercises_data)} exercícios')
+        
+        return Response({
+            'success': True,
+            'message': 'Treino editado com sucesso! 📝',
+            'workout': {
+                'id': workout.id,
+                'name': workout.name,
+                'description': workout.description,
+                'difficulty_level': workout.difficulty_level,
+                'estimated_duration': workout.estimated_duration,
+                'target_muscle_groups': workout.target_muscle_groups,
+                'workout_type': workout.workout_type
+            },
+            'changes': {
+                'exercises_added': added_count,
+                'exercises_updated': updated_count,
+                'exercises_removed': removed_count,
+                'total_exercises': len(exercises_data)
+            },
+            'exercises': exercises_data
+        })
+        
+    except Workout.DoesNotExist:
+        return Response({
+            'error': 'Treino não encontrado'
+        }, status=status.HTTP_404_NOT_FOUND)
+    
+    except Exception as e:
+        print(f'❌ Erro ao editar treino: {str(e)}')
+        import traceback
+        traceback.print_exc()
+        
+        return Response({
+            'error': 'Erro ao editar treino',
+            'details': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_available_exercises_for_editing(request):
+    """
+    🔍 Lista TODOS os exercícios disponíveis para adicionar ao treino
+    Pode filtrar por:
+    - muscle_group (query param)
+    - difficulty_level (query param)
+    - search (query param)
+    """
+    try:
+        # Iniciar query
+        exercises = Exercise.objects.all()
+        
+        # Filtros opcionais
+        muscle_group = request.GET.get('muscle_group')
+        difficulty = request.GET.get('difficulty_level')
+        search = request.GET.get('search')
+        
+        if muscle_group and muscle_group != 'all':
+            exercises = exercises.filter(muscle_group=muscle_group)
+        
+        if difficulty and difficulty != 'all':
+            exercises = exercises.filter(difficulty_level=difficulty)
+        
+        if search:
+            from django.db.models import Q
+            exercises = exercises.filter(
+                Q(name__icontains=search) | Q(description__icontains=search)
+            )
+        
+        # Limitar a 100 resultados
+        exercises = exercises[:100]
+        
+        exercises_data = []
+        for exercise in exercises:
+            exercises_data.append({
+                'id': exercise.id,
+                'name': exercise.name,
+                'description': exercise.description,
+                'muscle_group': exercise.muscle_group,
+                'difficulty_level': exercise.difficulty_level,
+                'equipment_needed': exercise.equipment_needed,
+                'duration_minutes': exercise.duration_minutes,
+                'video_url': exercise.video_url,
+                #'image_url': exercise.image_url,
+            })
+        
+        print(f'✅ {len(exercises_data)} exercícios disponíveis')
+        
+        return Response({
+            'success': True,
+            'exercises': exercises_data,
+            'total': len(exercises_data),
+            'filters_applied': {
+                'muscle_group': muscle_group,
+                'difficulty_level': difficulty,
+                'search': search
+            }
+        })
+        
+    except Exception as e:
+        print(f'❌ Erro ao buscar exercícios: {str(e)}')
+        return Response({
+            'error': 'Erro ao buscar exercícios',
+            'details': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def delete_workout(request, workout_id):
+    """
+    🗑️ Deleta um treino usando SOFT DELETE
+    
+    Regras:
+    - ✅ Treinos personalizados: só o criador pode deletar
+    - ❌ Treinos do catálogo: apenas admins
+    - ⚠️ Não deleta fisicamente, apenas marca como inativo
+    - ✅ Pode ser restaurado depois
+    """
+    try:
+        workout = Workout.objects.get(id=workout_id)
+        
+        # ============================================================
+        # VALIDAÇÃO 1: VERIFICAR SE JÁ ESTÁ DELETADO
+        # ============================================================
+        
+        if not workout.is_active:
+            return Response({
+                'error': 'Este treino já foi deletado',
+                'workout_name': workout.name,
+                'deleted_at': workout.deleted_at,
+                'deleted_by': workout.deleted_by.username if workout.deleted_by else None,
+                'suggestion': 'Use a rota de restauração para recuperá-lo'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # ============================================================
+        # VALIDAÇÃO 2: VERIFICAR PERMISSÕES
+        # ============================================================
+        
+        # Treinos do catálogo (públicos)
+        if not workout.is_personalized:
+            if not request.user.is_staff:
+                return Response({
+                    'error': 'Apenas administradores podem deletar treinos do catálogo',
+                    'workout_name': workout.name,
+                    'is_catalog': True
+                }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Treinos personalizados
+        else:
+            if workout.created_by_user != request.user:
+                return Response({
+                    'error': 'Você não tem permissão para deletar este treino',
+                    'workout_name': workout.name,
+                    'owner': workout.created_by_user.username if workout.created_by_user else 'Sistema'
+                }, status=status.HTTP_403_FORBIDDEN)
+        
+        # ============================================================
+        # VALIDAÇÃO 3: VERIFICAR SESSÕES ATIVAS
+        # ============================================================
+        
+        active_sessions = WorkoutSession.objects.filter(
+            workout=workout,
+            completed=False
         )
+        
+        if active_sessions.exists():
+            return Response({
+                'error': 'Não é possível deletar este treino',
+                'reason': 'Existem sessões ativas usando este treino',
+                'active_sessions_count': active_sessions.count(),
+                'suggestion': 'Cancele ou complete as sessões ativas primeiro'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # ============================================================
+        # SOFT DELETE: MARCAR COMO INATIVO
+        # ============================================================
+        
+        workout_name = workout.name
+        workout_type = 'personalizado' if workout.is_personalized else 'catálogo'
+        
+        # Contar sessões completas (para informação)
+        completed_sessions_count = WorkoutSession.objects.filter(
+            workout=workout,
+            completed=True
+        ).count()
+        
+        # Marcar como deletado
+        workout.is_active = False
+        workout.deleted_at = timezone.now()
+        workout.deleted_by = request.user
+        workout.save()
+        
+        print(f'✅ Treino soft-deleted: {workout_name} (ID: {workout_id})')
+        print(f'   Por: {request.user.username}')
+        print(f'   Em: {workout.deleted_at}')
+        
+        return Response({
+            'success': True,
+            'message': f'Treino "{workout_name}" removido com sucesso',
+            'action': 'soft_delete',
+            'workout': {
+                'id': workout.id,
+                'name': workout_name,
+                'type': workout_type,
+                'deleted_at': workout.deleted_at,
+                'deleted_by': request.user.username
+            },
+            'info': {
+                'completed_sessions_preserved': completed_sessions_count,
+                'can_be_restored': True,
+                'restore_instructions': 'Use POST /api/workouts/{id}/restore/ para restaurar'
+            }
+        })
+        
+    except Workout.DoesNotExist:
+        return Response({
+            'error': 'Treino não encontrado',
+            'workout_id': workout_id
+        }, status=status.HTTP_404_NOT_FOUND)
+    
+    except Exception as e:
+        print(f'❌ Erro ao deletar treino {workout_id}: {str(e)}')
+        import traceback
+        traceback.print_exc()
+        
+        return Response({
+            'error': 'Erro ao deletar treino',
+            'details': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def restore_workout(request, workout_id):
+    """
+    ♻️ Restaura um treino deletado (soft delete)
+    """
+    try:
+        # Buscar treino deletado
+        workout = Workout.objects.get(id=workout_id, is_active=False)
+        
+        # ============================================================
+        # VALIDAÇÃO: VERIFICAR PERMISSÕES
+        # ============================================================
+        
+        # Treinos do catálogo: só admin
+        if not workout.is_personalized and not request.user.is_staff:
+            return Response({
+                'error': 'Apenas administradores podem restaurar treinos do catálogo'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        # Treinos personalizados: só o criador ou admin
+        if workout.is_personalized:
+            if workout.created_by_user != request.user and not request.user.is_staff:
+                return Response({
+                    'error': 'Você não tem permissão para restaurar este treino',
+                    'owner': workout.created_by_user.username if workout.created_by_user else 'Sistema'
+                }, status=status.HTTP_403_FORBIDDEN)
+        
+        # ============================================================
+        # RESTAURAR
+        # ============================================================
+        
+        workout_name = workout.name
+        deleted_info = {
+            'was_deleted_at': workout.deleted_at,
+            'was_deleted_by': workout.deleted_by.username if workout.deleted_by else None
+        }
+        
+        # Limpar campos de deleção
+        workout.is_active = True
+        workout.deleted_at = None
+        workout.deleted_by = None
+        workout.save()
+        
+        print(f'♻️ Treino restaurado: {workout_name} (ID: {workout_id})')
+        print(f'   Por: {request.user.username}')
+        
+        return Response({
+            'success': True,
+            'message': f'Treino "{workout_name}" restaurado com sucesso! 🎉',
+            'workout': {
+                'id': workout.id,
+                'name': workout_name,
+                'is_active': workout.is_active,
+                'restored_by': request.user.username,
+                'restored_at': timezone.now()
+            },
+            'previous_deletion': deleted_info
+        })
+        
+    except Workout.DoesNotExist:
+        return Response({
+            'error': 'Treino deletado não encontrado',
+            'workout_id': workout_id,
+            'suggestion': 'Verifique se o ID está correto e se o treino foi realmente deletado'
+        }, status=status.HTTP_404_NOT_FOUND)
+    
+    except Exception as e:
+        print(f'❌ Erro ao restaurar treino {workout_id}: {str(e)}')
+        import traceback
+        traceback.print_exc()
+        
+        return Response({
+            'error': 'Erro ao restaurar treino',
+            'details': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])

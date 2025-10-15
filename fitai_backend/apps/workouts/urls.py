@@ -22,7 +22,7 @@ urlpatterns = [
     path('exercises/<int:exercise_log_id>/skip/', views.skip_exercise, name='skip_exercise'),
     path('sessions/pause/', views.pause_session, name='pause_session'),
     path('sessions/complete/', views.complete_workout_session, name='complete_workout_session'),
-    path('sessions/cancel/', views.cancel_active_session, name='cancel_session'),
+   # path('sessions/cancel/', views.cancel_active_session, name='cancel_session'),
     
     path('workouts/sessions/<int:session_id>/complete/', views.complete_workout_session, name='complete_workout_session_with_id'),
 
@@ -35,7 +35,11 @@ urlpatterns = [
     path('workouts/my-workouts/', views.my_personalized_workouts, name='my_personalized_workouts'),
     path('workouts/create/', views.create_personalized_workout, name='create_personalized_workout'),
     path('workouts/<int:workout_id>/update/', views.update_personalized_workout, name='update_personalized_workout'),
-    path('workouts/<int:workout_id>/delete/', views.delete_personalized_workout, name='delete_personalized_workout'),
+   # path('workouts/<int:workout_id>/delete/', views.delete_personalized_workout, name='delete_personalized_workout'),
+    #remover treinos
+    path('workouts/<int:workout_id>/delete/', views.delete_workout, name='delete_workout'),
+    path('workouts/<int:workout_id>/restore/', views.restore_workout, name='restore_workout'),
+
     path('workouts/<int:workout_id>/duplicate/', views.duplicate_workout, name='duplicate_workout'),
 
     # Gerenciar exercícios no treino personalizado
@@ -56,6 +60,28 @@ urlpatterns = [
     # 🆕 RECOMENDAÇÃO INTELIGENTE (NOVA)
     # ============================================================
     path('workouts/smart-recommendation/', views.smart_recommendation_view, name='smart-recommendation'),
+
+
+     # Buscar treino completo para editar
+    path(
+        'workouts/<int:workout_id>/fetch/', 
+        views.get_workout_for_editing, 
+        name='get_workout_for_editing'
+    ),
+    
+    # Editar treino completo (workout + exercícios)
+    path(
+        'workouts/<int:workout_id>/edit/', 
+        views.edit_workout_complete, 
+        name='edit_workout_complete'
+    ),
+    
+    # Listar exercícios disponíveis para adicionar
+    path(
+        'exercises/available/', 
+        views.get_available_exercises_for_editing, 
+        name='get_available_exercises_for_editing'
+    ),
     
     
 ]

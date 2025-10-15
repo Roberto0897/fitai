@@ -39,6 +39,39 @@ class Workout(models.Model):
                                    related_name='personalized_workouts')
     is_personalized = models.BooleanField(default=False)
 
+    # ============================================================
+    # 🆕 SOFT DELETE 
+    # ============================================================
+    is_active = models.BooleanField(
+        default=True,
+        db_index=True,  # ← Melhora performance em queries
+        help_text="Se False, o treino foi deletado (soft delete)"
+    )
+    
+    deleted_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Data e hora em que o treino foi deletado"
+    )
+    
+    deleted_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='workouts_deleted',
+        help_text="Usuário que deletou o treino"
+    )
+    # ============================================================
+
+    
+    def __str__(self):
+        status = " (DELETADO)" if not self.is_active else ""
+        return f"{self.name} ({self.difficulty_level or 'Sem dificuldade'}){status}"
+
+    class Meta:
+        ordering = ['difficulty_level', 'name']
+
     
     def __str__(self):
         return f"{self.name} ({self.difficulty_level or 'Sem dificuldade'})"

@@ -278,6 +278,14 @@ class AppRouter {
       debugPrint('❌ Erro ao navegar para Workout Detail: $e');
     }
   }
+  static void goToProgress() {
+  try {
+    _router.go(AppRoutes.reports); // Ou criar rota específica
+    debugPrint('✅ Navegação para Progress/Reports realizada');
+  } catch (e) {
+    debugPrint('❌ Erro ao navegar para Progress: $e');
+  }
+}
   // Método para debug - verificar estado atual
   static Future<Map<String, dynamic>> getRouterDebugInfo() async {
     final currentLocation = _router.routerDelegate.currentConfiguration.uri.path;
