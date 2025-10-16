@@ -60,6 +60,25 @@ class UserProfile(models.Model):
         validators=[MinValueValidator(0), MaxValueValidator(3)],
         help_text="Dias de descanso entre treinos"
     )
+
+    # 🆕 NOVO: Horário preferido de treino
+    preferred_workout_time = models.CharField(
+        max_length=20,
+        default='flexible',
+        choices=[
+            ('morning', 'Manhã'),
+            ('afternoon', 'Tarde'),
+            ('evening', 'Noite'),
+            ('flexible', 'Flexível'),
+        ],
+        help_text="Período do dia preferido para treino"
+    )
+
+    # 🆕 NOVO: Limitações Físicas (texto livre)
+    physical_limitations = models.TextField(
+        blank=True,
+        help_text="Quaisquer lesões, dores ou restrições físicas"
+    )
     
     # Padrão aprendido (IA preenche automaticamente)
     learned_training_pattern = models.JSONField(

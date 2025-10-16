@@ -19,6 +19,12 @@ class UserRegistrationData {
   bool malaFlexibilidade;
   DateTime createdAt;
 
+  //  NOVOS PARÂMETROS
+  int frequenciaSemanal;
+  int diasDescanso;
+  String horarioPreferido;
+  String limitacoesFisicas;
+
   // Construtor com valores padrão
   UserRegistrationData({
     this.nome = '',
@@ -37,6 +43,11 @@ class UserRegistrationData {
     this.tempoDisponivel = '',
     this.malaFlexibilidade = false,
     DateTime? createdAt,
+    //  NOVOS PARÂMETROS
+    this.frequenciaSemanal = 3,
+    this.diasDescanso = 1,
+    this.horarioPreferido = 'flexible',
+    this.limitacoesFisicas = '',
   }) : 
     metas = metas ?? [],
     areasDesejadas = areasDesejadas ?? [],
@@ -97,6 +108,11 @@ class UserRegistrationData {
       'equipamentos': equipamentos,
       'tempo_disponivel': tempoDisponivel,
       'mala_flexibilidade': malaFlexibilidade,
+     
+      'frequencia_semanal': frequenciaSemanal,
+      'dias_descanso': diasDescanso,
+      'horario_preferido': horarioPreferido,
+      'limitacoes_fisicas': limitacoesFisicas.isNotEmpty ? limitacoesFisicas : null
     };
   }
 
@@ -120,6 +136,10 @@ class UserRegistrationData {
       'tempo_disponivel': tempoDisponivel,
       'mala_flexibilidade': malaFlexibilidade,
       'created_at': createdAt.toIso8601String(),
+      'frequencia_semanal': frequenciaSemanal,
+      'dias_descanso': diasDescanso,
+      'horario_preferido': horarioPreferido,
+      'limitacoes_fisicas': limitacoesFisicas,
     };
   }
   // Conversão para JSON (para salvar dados)

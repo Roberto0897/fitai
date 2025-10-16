@@ -411,161 +411,226 @@ def recommendation_history(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-@rate_limit_user(max_requests_per_hour=10)  # Limite mais baixo para geração de IA
+@rate_limit_user(max_requests_per_hour=10)
 def generate_ai_workout(request):
     """
-    Geração de treino com IA - rate limiting mais restrito
+    🔥 VERSÃO CORRIGIDA: Gera treino SEMANAL igual ao chatbot
+    
+    Agora usa a MESMA lógica de generate_workout_from_conversation
+    para garantir consistência.
     """
     start_time = time.time()
     
     try:
-        # Parâmetros da requisição
-        duration = request.data.get('duration', 30)
+        # Buscar perfil
+        try:
+            profile = UserProfile.objects.get(user=request.user)
+        except UserProfile.DoesNotExist:
+            return Response({
+                "error": "Perfil incompleto",
+                "message": "Complete seu perfil para geração de treinos",
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Parâmetros (com defaults)
+        duration = request.data.get('duration', 45)  # Duração por dia
         focus = request.data.get('focus', 'full_body')
         difficulty = request.data.get('difficulty')
         custom_request = request.data.get('custom_request', '')
+        days_per_week = request.data.get('days_per_week', 5)  # ✅ NOVO
         
-        # Validações de entrada
-        validation_errors = []
-        
+        # Validações
         if not (10 <= duration <= 120):
-            validation_errors.append("Duração deve estar entre 10 e 120 minutos")
+            return Response({
+                "error": "Duração deve estar entre 10 e 120 minutos",
+            }, status=status.HTTP_400_BAD_REQUEST)
         
-        valid_focus = ['full_body', 'upper', 'lower', 'cardio', 'strength', 'flexibility']
+        valid_focus = ['full_body', 'upper', 'lower', 'cardio', 'strength']
         if focus not in valid_focus:
-            validation_errors.append(f"Focus deve ser um de: {', '.join(valid_focus)}")
-        
-        if custom_request and len(custom_request) > 200:
-            validation_errors.append("Pedido personalizado deve ter no máximo 200 caracteres")
-        
-        if validation_errors:
             return Response({
-                "error": "Parâmetros inválidos",
-                "validation_errors": validation_errors,
-                "valid_parameters": {
-                    "duration": "10-120 minutos",
-                    "focus": valid_focus,
-                    "difficulty": ["beginner", "intermediate", "advanced", "auto"]
-                }
+                "error": f"Focus deve ser um de: {', '.join(valid_focus)}",
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Buscar perfil do usuário
-        try:
-            profile = UserProfile.objects.get(user=request.user)
-            if not difficulty or difficulty == 'auto':
-                # Mapear activity_level para difficulty
-                mapping = {
-                    'sedentary': 'beginner',
-                    'light': 'beginner',
-                    'moderate': 'intermediate',
-                    'active': 'intermediate',
-                    'very_active': 'advanced'
-                }
-                difficulty = mapping.get(profile.activity_level, 'beginner')
-        except UserProfile.DoesNotExist:
-            profile = None
-            difficulty = difficulty or 'beginner'
+        # Mapear activity_level para difficulty
+        if not difficulty or difficulty == 'auto':
+            mapping = {
+                'sedentary': 'beginner',
+                'light': 'beginner',
+                'moderate': 'intermediate',
+                'active': 'intermediate',
+                'very_active': 'advanced'
+            }
+            difficulty = mapping.get(profile.activity_level, 'beginner')
+        
+        print(f'🏋️ Gerando treino via dashboard para {request.user.email}')
+        print(f'   Foco: {focus}, Dificuldade: {difficulty}, Dias: {days_per_week}')
+        
+        # ============================================================
+        # 🔥 USAR MESMA LÓGICA DO CHATBOT
+        # ============================================================
+        from apps.exercises.models import Exercise
+        from apps.workouts.models import Workout, WorkoutExercise
+        
+        # Buscar exercícios
+        exercises_query = Exercise.objects.all()
+        
+        focus_mapping = {
+            'upper': ['chest', 'back', 'shoulders', 'arms'],
+            'lower': ['legs', 'glutes'],
+            'cardio': ['cardio'],
+            'strength': ['chest', 'back', 'legs', 'shoulders'],
+            'full_body': None,
+        }
+        
+        if focus in focus_mapping and focus_mapping[focus]:
+            exercises_query = exercises_query.filter(muscle_group__in=focus_mapping[focus])
+        
+        if difficulty == 'beginner':
+            exercises_query = exercises_query.filter(difficulty_level='beginner')
+        elif difficulty == 'intermediate':
+            exercises_query = exercises_query.filter(difficulty_level__in=['beginner', 'intermediate'])
+        
+        all_exercises = list(exercises_query[:50])
+        
+        if not all_exercises:
+            return Response({
+                'error': 'Não há exercícios disponíveis',
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Estrutura semanal
+        weekly_structure = {
+            'Dia 1': {'description': 'Peito e Tríceps', 'muscle_groups': ['chest', 'arms'], 'exercises_count': 5},
+            'Dia 2': {'description': 'Costas e Bíceps', 'muscle_groups': ['back', 'arms'], 'exercises_count': 5},
+            'Dia 3': {'description': 'Pernas (quadríceps)', 'muscle_groups': ['legs'], 'exercises_count': 5},
+            'Dia 4': {'description': 'Descanso Ativo', 'muscle_groups': ['cardio'], 'exercises_count': 3},
+            'Dia 5': {'description': 'Ombros', 'muscle_groups': ['shoulders', 'back'], 'exercises_count': 5},
+            'Dia 6': {'description': 'Pernas (posteriores)', 'muscle_groups': ['legs', 'glutes'], 'exercises_count': 5},
+            'Dia 7': {'description': 'Descanso', 'muscle_groups': [], 'exercises_count': 0},
+        }
+        
+        days_to_generate = list(weekly_structure.keys())[:days_per_week]
+        
+        # ============================================================
+        # CRIAR WORKOUT PRIVADO
+        # ============================================================
+        workout_name = f"Treino IA {focus.title()} - {timezone.now().strftime('%d/%m/%Y')}"
+        
+        workout = Workout.objects.create(
+            name=workout_name,
+            description=f"Treino semanal ({days_per_week} dias, {duration}min/dia). Foco: {focus}. Gerado via IA.",
+            difficulty_level=difficulty,
+            estimated_duration=days_per_week * duration,  # ✅ Total semanal
+            target_muscle_groups=', '.join([weekly_structure[d]['description'] for d in days_to_generate if weekly_structure[d]['exercises_count'] > 0]),
+            equipment_needed='Variado',
+            calories_estimate=300 * days_per_week,
+            workout_type=focus if focus != 'full_body' else 'strength',
             
-            return Response({
-                "error": "Perfil incompleto",
-                "message": "Complete seu perfil para geração de treinos personalizados",
-                "required_action": "Acesse configurações e complete seu perfil"
-            }, status=status.HTTP_400_BAD_REQUEST)
+            # ✅ Privado
+            is_personalized=True,
+            created_by_user=request.user,
+            is_recommended=True,
+            is_active=True,
+        )
         
-        # Cache key para evitar regeneração desnecessária
-        cache_params = f"{duration}_{focus}_{difficulty}_{hash(custom_request)}"
-        cache_key = f"ai_workout_{request.user.id}_{cache_params}"
+        print(f'✅ Workout criado: {workout.name} (ID: {workout.id})')
         
-        # Verificar cache (válido por 1 hora)
-        cached_workout = cache.get(cache_key)
-        if cached_workout and not request.data.get('force_new', False):
-            cached_workout['metadata']['from_cache'] = True
-            return Response(cached_workout)
+        # ============================================================
+        # ADICIONAR EXERCÍCIOS
+        # ============================================================
+        workout_plan = []
+        order_counter = 1
         
-        # Tentar gerar com IA primeiro
-        try:
-            ai_service = AIService()
-            if ai_service.is_available and profile:
-                ai_workout = ai_service.generate_personalized_workout_plan(
-                    profile, duration, focus, difficulty
+        for day_name in days_to_generate:
+            day_info = weekly_structure[day_name]
+            
+            if day_info['exercises_count'] == 0:
+                continue
+            
+            day_exercises = [
+                ex for ex in all_exercises 
+                if ex.muscle_group in day_info['muscle_groups']
+            ][:day_info['exercises_count']]
+            
+            if not day_exercises:
+                day_exercises = all_exercises[:day_info['exercises_count']]
+            
+            for exercise in day_exercises:
+                if profile.goal == 'lose_weight':
+                    sets, reps, rest = (3, "45-60 seg", 30)
+                elif profile.goal == 'gain_muscle':
+                    sets, reps, rest = (4, "8-12", 90)
+                else:
+                    sets, reps, rest = (3, "12-15", 60)
+                
+                WorkoutExercise.objects.create(
+                    workout=workout,
+                    exercise=exercise,
+                    sets=sets,
+                    reps=reps,
+                    rest_time=rest,
+                    order_in_workout=order_counter,
+                    notes=f"{day_name}: {day_info['description']}"
                 )
                 
-                if ai_workout and ai_workout.get('quality_score', 0) >= getattr(settings, 'AI_QUALITY_THRESHOLD', 70):
-                    response_data = {
-                        'ai_generated_workout': ai_workout,
-                        'generation_method': 'ai_powered',
-                        'personalization': {
-                            'based_on_profile': True,
-                            'user_goal': profile.goal,
-                            'activity_level': profile.activity_level,
-                            'custom_request': custom_request,
-                            'difficulty_auto_selected': difficulty != request.data.get('difficulty')
-                        },
-                        'quality_metrics': {
-                            'quality_score': ai_workout.get('quality_score', 0),
-                            'exercise_count': len(ai_workout.get('exercises', [])),
-                            'estimated_effectiveness': 'high' if ai_workout.get('quality_score', 0) >= 80 else 'medium'
-                        },
-                        'instructions': {
-                            'warm_up': ai_workout.get('warm_up', {}),
-                            'cool_down': ai_workout.get('cool_down', {}),
-                            'safety_notes': 'Treino gerado por IA baseado no seu perfil único. Pare se sentir dor.'
-                        },
-                        'metadata': {
-                            'generated_at': timezone.now().isoformat(),
-                            'response_time_ms': round((time.time() - start_time) * 1000, 2),
-                            'ai_model_used': getattr(settings, 'OPENAI_MODEL', 'gpt-3.5-turbo'),
-                            'from_cache': False
-                        }
-                    }
-                    
-                    # Cache por 1 hora
-                    cache.set(cache_key, response_data, 3600)
-                    
-                    return Response(response_data, status=status.HTTP_201_CREATED)
-        except Exception as e:
-            logger.error(f"Error with AIService: {e}")
+                workout_plan.append({
+                    'day': day_name,
+                    'day_description': day_info['description'],
+                    'order': order_counter,
+                    'exercise': {
+                        'id': exercise.id,
+                        'name': exercise.name,
+                        'muscle_group': exercise.muscle_group,
+                    },
+                    'sets': sets,
+                    'reps': reps,
+                    'rest_time_seconds': rest,
+                })
+                order_counter += 1
         
-        # Fallback: geração por regras
-        fallback_workout = generate_rule_based_workout(duration, focus, difficulty, profile)
-        
+        # ============================================================
+        # RESPOSTA (IGUAL AO CHATBOT)
+        # ============================================================
         response_data = {
-            'ai_generated_workout': fallback_workout,
-            'generation_method': 'rule_based_fallback',
-            'personalization': {
-                'based_on_profile': profile is not None,
-                'note': 'IA temporariamente indisponível, usando algoritmo inteligente'
-            },
-            'quality_metrics': {
-                'quality_score': 75,  # Score padrão para fallback
-                'exercise_count': len(fallback_workout.get('exercises', [])),
-                'estimated_effectiveness': 'medium'
-            },
-            'instructions': {
-                'warm_up': 'Faça 5-10 minutos de aquecimento adequado ao foco do treino',
-                'cool_down': 'Finalize com 5-10 minutos de alongamento específico',
-                'safety_notes': 'Treino personalizado baseado nas suas preferências. Ajuste conforme necessário.'
+            'success': True,
+            'workout_created': True,
+            'workout_id': workout.id,
+            'generation_method': 'smart_weekly_plan',
+            'ai_generated_workout': {
+                'plan_info': {
+                    'workout_id': workout.id,
+                    'workout_name': workout.name,
+                    'total_exercises': len(workout_plan),
+                    'estimated_duration': workout.estimated_duration,
+                    'duration_per_day': duration,
+                    'focus': focus,
+                    'difficulty': difficulty,
+                    'days_per_week': days_per_week,
+                    'is_private': True,
+                    'owner': request.user.email,
+                },
+                'workout_plan': workout_plan,
+                'ai_recommendations': {
+                    'warm_up': 'Faça 5-10 minutos de aquecimento',
+                    'cool_down': 'Finalize com alongamento',
+                },
             },
             'metadata': {
                 'generated_at': timezone.now().isoformat(),
                 'response_time_ms': round((time.time() - start_time) * 1000, 2),
-                'fallback_reason': 'IA indisponível ou qualidade baixa',
-                'from_cache': False
             }
         }
         
-        # Cache por 30 minutos (menos tempo que IA)
-        cache.set(cache_key, response_data, 1800)
+        print(f'✅ Resposta enviada: {len(workout_plan)} exercícios em {days_per_week} dias')
         
         return Response(response_data, status=status.HTTP_201_CREATED)
         
     except Exception as e:
-        logger.error(f"Error generating AI workout for user {request.user.id}: {e}")
+        logger.error(f"Erro ao gerar treino: {e}")
+        import traceback
+        traceback.print_exc()
+        
         return Response({
-            "error": "Erro na geração do treino personalizado",
-            "suggestion": "Tente com parâmetros mais simples ou use treinos pré-definidos",
-            "error_code": "WORKOUT_GENERATION_ERROR",
-            "support_message": "Se o problema persistir, entre em contato com o suporte"
+            "error": "Erro na geração do treino",
+            "details": str(e),
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
@@ -793,12 +858,15 @@ def generate_motivational_message(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-@rate_limit_user(max_requests_per_hour=5)  # Limite baixo
+@rate_limit_user(max_requests_per_hour=5)
 def generate_workout_from_conversation(request):
     """
     🤖 Gera plano de treino SEMANAL baseado na conversa do chatbot
     
-    Este endpoint é específico para o chatbot e NÃO afeta o onboarding.
+    ✅ CORREÇÕES:
+    - Treino PRIVADO do usuário (is_personalized=True, created_by_user=user)
+    - Treino RECOMENDADO (is_recommended=True) para aparecer na lista certa
+    - Apenas o dono pode ver
     """
     try:
         from apps.exercises.models import Exercise
@@ -826,10 +894,13 @@ def generate_workout_from_conversation(request):
         }
         difficulty = difficulty_mapping.get(difficulty, 'beginner')
         
-        print(f'🤖 Gerando plano SEMANAL para {request.user.email}')
+        print(f'🤖 Gerando plano SEMANAL PRIVADO para {request.user.email}')
         print(f'   Dias: {days_per_week}, Foco: {focus}, Nível: {difficulty}')
         
-        # Buscar exercícios disponíveis
+        # ============================================================
+        # 🔥 BUSCAR EXERCÍCIOS DISPONÍVEIS
+        # ============================================================
+        
         exercises_query = Exercise.objects.all()
         
         # Filtrar por foco
@@ -860,7 +931,6 @@ def generate_workout_from_conversation(request):
         # 🔥 ESTRUTURAR PLANO SEMANAL
         # ============================================================
         
-        # Definir grupos musculares por dia (exemplo para full_body)
         weekly_structure = {
             'Dia 1': {
                 'description': 'Peito e Tríceps',
@@ -903,6 +973,35 @@ def generate_workout_from_conversation(request):
         days_to_generate = list(weekly_structure.keys())[:days_per_week]
         
         # ============================================================
+        # 🔥 CRIAR WORKOUT (PRIVADO DO USUÁRIO)
+        # ============================================================
+        
+        # Nome do treino com timestamp para unicidade
+        workout_name = f"Treino Personalizado IA - {timezone.now().strftime('%d/%m/%Y')}"
+        
+        workout = Workout.objects.create(
+            name=workout_name,
+            description=f"Treino semanal gerado por IA com {days_per_week} dias de treino. Foco: {focus}. Criado via chatbot.",
+            difficulty_level=difficulty,
+            estimated_duration=days_per_week * 45,  # ~45min por dia
+            target_muscle_groups=', '.join([weekly_structure[d]['description'] for d in days_to_generate if weekly_structure[d]['exercises_count'] > 0]),
+            equipment_needed=user_preferences.get('equipment', 'Variado'),
+            calories_estimate=300,
+            workout_type='full_body' if focus == 'full_body' else focus,
+            
+            # ✅ CAMPOS CRÍTICOS PARA PRIVACIDADE
+            is_personalized=True,           # Treino personalizado
+            created_by_user=request.user,   # Dono do treino
+            is_recommended=True,            # Aparece na seção de recomendados
+            is_active=True,                 # Ativo
+        )
+        
+        print(f'✅ Workout PRIVADO criado: {workout.name} (ID: {workout.id})')
+        print(f'   Dono: {request.user.email}')
+        print(f'   is_personalized: True')
+        print(f'   is_recommended: True')
+        
+        # ============================================================
         # GERAR WORKOUT_PLAN COM CAMPO 'day'
         # ============================================================
         
@@ -925,7 +1024,7 @@ def generate_workout_from_conversation(request):
             if not day_exercises:
                 day_exercises = all_exercises[:day_info['exercises_count']]
             
-            # Adicionar exercícios ao plano
+            # Adicionar exercícios ao treino
             for i, exercise in enumerate(day_exercises, 1):
                 # Configurar sets/reps baseado no objetivo
                 if profile.goal == 'lose_weight':
@@ -935,8 +1034,20 @@ def generate_workout_from_conversation(request):
                 else:
                     sets, reps, rest = (3, "12-15", 60)
                 
+                # ✅ CRIAR WorkoutExercise vinculado ao Workout
+                WorkoutExercise.objects.create(
+                    workout=workout,
+                    exercise=exercise,
+                    sets=sets,
+                    reps=reps,
+                    rest_time=rest,
+                    order_in_workout=order_counter,
+                    notes=f"{day_name}: {day_info['description']}"
+                )
+                
+                # Para resposta JSON
                 workout_plan.append({
-                    'day': day_name,  # 🔥 CAMPO CRÍTICO!
+                    'day': day_name,
                     'day_description': day_info['description'],
                     'order': order_counter,
                     'exercise': {
@@ -960,27 +1071,34 @@ def generate_workout_from_conversation(request):
         # ============================================================
         
         response_data = {
+            'success': True,
+            'workout_id': workout.id,  # ✅ ID do treino criado
             'ai_generated_workout': {
                 'plan_info': {
+                    'workout_id': workout.id,
+                    'workout_name': workout.name,
                     'total_exercises': len(workout_plan),
-                    'estimated_duration': days_per_week * 45,  # ~45min por dia
+                    'estimated_duration': days_per_week * 45,
                     'focus': focus,
                     'difficulty': difficulty,
                     'days_per_week': days_per_week,
                     'personalized_for': profile.user.username or profile.user.email,
+                    'is_private': True,  # ✅ Indicador
+                    'owner': request.user.email,
                 },
-                'workout_plan': workout_plan,  # 🔥 COM CAMPO 'day'!
+                'workout_plan': workout_plan,
                 'ai_recommendations': {
                     'warm_up': 'Faça 5-10 minutos de aquecimento antes de cada treino',
                     'cool_down': 'Finalize com 5-10 minutos de alongamento',
                     'hydration': 'Beba água durante o treino',
                     'progression': 'Aumente a carga gradualmente',
                 },
-                'customization_note': f'Plano semanal personalizado para {profile.goal or "fitness geral"}',
+                'customization_note': f'Plano semanal PRIVADO personalizado para {profile.goal or "fitness geral"}',
             },
         }
         
-        print(f'✅ Plano semanal gerado: {len(workout_plan)} exercícios em {days_per_week} dias')
+        print(f'✅ Plano semanal PRIVADO gerado: {len(workout_plan)} exercícios em {days_per_week} dias')
+        print(f'   Workout ID: {workout.id}')
         print(f'   Dias únicos: {set([ex["day"] for ex in workout_plan])}')
         
         return Response(response_data, status=status.HTTP_201_CREATED)
@@ -1441,15 +1559,3 @@ def refresh_daily_recommendation(request):
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-# urls.py - Adicionar estas rotas
-"""
-from django.urls import path
-from .views import get_daily_ai_recommendation, refresh_daily_recommendation
-
-urlpatterns = [
-    # ... suas outras rotas
-    
-    path('ai/daily-recommendation/', get_daily_ai_recommendation, name='daily-ai-recommendation'),
-    path('ai/daily-recommendation/refresh/', refresh_daily_recommendation, name='refresh-daily-recommendation'),
-]
-"""

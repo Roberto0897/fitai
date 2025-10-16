@@ -205,8 +205,11 @@ class _RegisterPageOptimizedState extends State<RegisterPageOptimized> {
         return _userData.tiposTreino.isNotEmpty &&
                _userData.equipamentos.isNotEmpty &&
                _userData.tempoDisponivel.isNotEmpty;
-        
-      case 6:
+
+      case 6:  // 🆕 NOVO - Step 6A: Preferências avançadas
+      return _userData.frequenciaSemanal > 0 &&
+             _userData.diasDescanso >= 0;
+      case 7:
         // Step 7: Finalização (sempre válido)
         return true;
         
@@ -262,6 +265,7 @@ class _RegisterPageOptimizedState extends State<RegisterPageOptimized> {
                   _buildStep4(),
                   _buildStep5(),
                   _buildStep6(),
+                  _buildStep6A(),
                   _buildStep7(),
                 ],
               ),
@@ -281,6 +285,7 @@ class _RegisterPageOptimizedState extends State<RegisterPageOptimized> {
       'Selecione áreas que\ndeseja focar',
       'Insira seu peso e altura!',
       'Preferências de treino',
+      'Mais algumas perguntas!',
       'Gerando treino!'
     ];
 
@@ -327,7 +332,7 @@ class _RegisterPageOptimizedState extends State<RegisterPageOptimized> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 40.0),
       child: LinearProgressIndicator(
-        value: (_currentPage + 1) / 7,
+        value: (_currentPage + 1) / 8,
         backgroundColor: Colors.grey[800],
         valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF00BCD4)),
       ),
@@ -394,7 +399,7 @@ class _RegisterPageOptimizedState extends State<RegisterPageOptimized> {
               const Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  'Sexo: *',
+                  'Sexo: ',
                   style: TextStyle(color: Colors.white, fontSize: 16),
                 ),
               ),
@@ -835,7 +840,187 @@ class _RegisterPageOptimizedState extends State<RegisterPageOptimized> {
       ),
     );
   }
+  Widget _buildStep6A() {  // Preferências avançadas
+  return Padding(
+    padding: const EdgeInsets.all(20.0),
+    child: SingleChildScrollView(
+      child: Column(
+        children: [
+          const Text(
+            'Apenas mais algumas perguntas!',
+            style: TextStyle(color: Colors.grey, fontSize: 14),
+          ),
+          const SizedBox(height: 30),
 
+          // 🗓️ Frequência semanal
+          const Text(
+            'Quantos dias por semana você quer treinar?',
+            style: TextStyle(color: Colors.white, fontSize: 16),
+          ),
+          const SizedBox(height: 15),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _buildFrequencyOption(2),
+              _buildFrequencyOption(3),
+              _buildFrequencyOption(4),
+              _buildFrequencyOption(5),
+              _buildFrequencyOption(6),
+            ],
+          ),
+
+          const SizedBox(height: 30),
+
+          // 💤 Dias de descanso
+          const Text(
+            'Precisa descansar entre treinos?',
+            style: TextStyle(color: Colors.white, fontSize: 16),
+          ),
+          const SizedBox(height: 15),
+          _buildRestOption('Sim, 1 dia entre treinos', 1),
+          const SizedBox(height: 10),
+          _buildRestOption('Sim, 2 dias entre treinos', 2),
+          const SizedBox(height: 10),
+          _buildRestOption('Não, posso treinar seguido', 0),
+
+          const SizedBox(height: 30),
+
+          // ⏰ Horário preferido
+          const Text(
+            'Qual melhor horário para treinar?',
+            style: TextStyle(color: Colors.white, fontSize: 16),
+          ),
+          const SizedBox(height: 15),
+          _buildTimeOption('Manhã (6h-12h)', 'morning'),
+          const SizedBox(height: 10),
+          _buildTimeOption('Tarde (12h-18h)', 'afternoon'),
+          const SizedBox(height: 10),
+          _buildTimeOption('Noite (18h-22h)', 'evening'),
+          const SizedBox(height: 10),
+          _buildTimeOption('Flexível', 'flexible'),
+
+          const SizedBox(height: 30),
+
+          // ⚠️ Limitações (opcional)
+          const Text(
+            'Tem alguma limitação física? (opcional)',
+            style: TextStyle(color: Colors.grey, fontSize: 14),
+          ),
+          const SizedBox(height: 10),
+          TextFormField(
+            maxLines: 2,
+            style: const TextStyle(color: Colors.black),
+            decoration: InputDecoration(
+              hintText: 'Ex: dor no joelho, lesão no ombro...',
+              filled: true,
+              fillColor: Colors.white,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(15),
+              ),
+            ),
+            onChanged: (value) {
+              _userData.limitacoesFisicas = value;
+            },
+          ),
+        ],
+      ),
+    ),
+  );
+}
+// No arquivo register_page.dart
+
+Widget _buildFrequencyOption(int days) {
+  bool isSelected = _userData.frequenciaSemanal == days;
+  return GestureDetector(
+    onTap: () {
+      setState(() {
+        _userData.frequenciaSemanal = days;
+      });
+    },
+    child: Container(
+      width: 50,
+      height: 50,
+      decoration: BoxDecoration(
+        color: isSelected ? const Color(0xFF00BCD4) : Colors.white,
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: isSelected ? const Color(0xFF00BCD4) : Colors.grey,
+          width: 2,
+        ),
+      ),
+      child: Center(
+        child: Text(
+          '$days',
+          style: TextStyle(
+            color: isSelected ? Colors.white : Colors.black,
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+Widget _buildRestOption(String text, int days) {
+  bool isSelected = _userData.diasDescanso == days;
+  return GestureDetector(
+    onTap: () {
+      setState(() {
+        _userData.diasDescanso = days;
+      });
+    },
+    child: Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      decoration: BoxDecoration(
+        color: isSelected ? const Color(0xFF00BCD4) : Colors.white,
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(
+          color: isSelected ? const Color(0xFF00BCD4) : Colors.grey,
+        ),
+      ),
+      child: Text(
+        text,
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          color: isSelected ? Colors.white : Colors.black,
+          fontSize: 14,
+        ),
+      ),
+    ),
+  );
+}
+
+Widget _buildTimeOption(String text, String value) {
+  bool isSelected = _userData.horarioPreferido == value;
+  return GestureDetector(
+    onTap: () {
+      setState(() {
+        _userData.horarioPreferido = value;
+      });
+    },
+    child: Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      decoration: BoxDecoration(
+        color: isSelected ? const Color(0xFF00BCD4) : Colors.white,
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(
+          color: isSelected ? const Color(0xFF00BCD4) : Colors.grey,
+        ),
+      ),
+      child: Text(
+        text,
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          color: isSelected ? Colors.white : Colors.black,
+          fontSize: 14,
+        ),
+      ),
+    ),
+  );
+}
   // ✅ CORRIGIDO: withValues ao invés de withOpacity
   Widget _buildStep7() {
     return Padding(
@@ -1279,7 +1464,7 @@ class _RegisterPageOptimizedState extends State<RegisterPageOptimized> {
           if (_currentPage > 0) const SizedBox(width: 15),
           Expanded(
             child: ElevatedButton(
-              onPressed: _isLoading ? null : (_currentPage == 6 ? _finishRegistration : _nextPage),
+              onPressed: _isLoading ? null : (_currentPage == 7 ? _finishRegistration : _nextPage),
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF00BCD4),
                 padding: const EdgeInsets.symmetric(vertical: 15),
@@ -1297,7 +1482,7 @@ class _RegisterPageOptimizedState extends State<RegisterPageOptimized> {
                       ),
                     )
                   : Text(
-                      _currentPage == 6 ? 'Finalizar' : 'Continuar',
+                      _currentPage == 7 ? 'Finalizar' : 'Continuar',
                       style: const TextStyle(color: Colors.white, fontSize: 16),
                     ),
             ),

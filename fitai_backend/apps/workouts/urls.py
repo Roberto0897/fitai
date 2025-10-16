@@ -83,5 +83,4 @@ urlpatterns = [
         name='get_available_exercises_for_editing'
     ),
     
-    
 ]
