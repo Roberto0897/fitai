@@ -871,6 +871,34 @@ class _RegisterPageOptimizedState extends State<RegisterPageOptimized> {
 
           const SizedBox(height: 30),
 
+          // 🆕 NOVA PERGUNTA: Quais dias prefere treinar
+          const Text(
+            'Em quais dias você prefere treinar?',
+            style: TextStyle(color: Colors.white, fontSize: 16),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Selecione ${_userData.frequenciaSemanal ?? 3} dias',
+            style: const TextStyle(color: Colors.grey, fontSize: 12),
+          ),
+          const SizedBox(height: 15),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            alignment: WrapAlignment.center,
+            children: [
+              _buildDayChip('Dom', 0),
+              _buildDayChip('Seg', 1),
+              _buildDayChip('Ter', 2),
+              _buildDayChip('Qua', 3),
+              _buildDayChip('Qui', 4),
+              _buildDayChip('Sex', 5),
+              _buildDayChip('Sáb', 6),
+            ],
+          ),
+
+          const SizedBox(height: 30),
+
           // 💤 Dias de descanso
           const Text(
             'Precisa descansar entre treinos?',
@@ -1019,6 +1047,44 @@ Widget _buildTimeOption(String text, String value) {
         ),
       ),
     ),
+  );
+}
+Widget _buildDayChip(String label, int dayNumber) {
+  // Inicializar lista se for null
+  _userData.diasPreferidos ??= [];
+  
+  final isSelected = _userData.diasPreferidos!.contains(dayNumber);
+  final frequencia = _userData.frequenciaSemanal ?? 3;
+  final canSelect = _userData.diasPreferidos!.length < frequencia || isSelected;
+  
+  return FilterChip(
+    label: Text(label),
+    selected: isSelected,
+    onSelected: canSelect ? (selected) {
+      setState(() {
+        if (selected) {
+          // Adicionar dia
+          if (!_userData.diasPreferidos!.contains(dayNumber)) {
+            _userData.diasPreferidos!.add(dayNumber);
+          }
+        } else {
+          // Remover dia
+          _userData.diasPreferidos!.remove(dayNumber);
+        }
+      });
+    } : null,
+    backgroundColor: Colors.grey[800],
+    selectedColor: const Color(0xFFE31D93),
+    disabledColor: Colors.grey[900],
+    labelStyle: TextStyle(
+      color: isSelected 
+          ? Colors.white 
+          : (canSelect ? Colors.grey[400] : Colors.grey[700]),
+      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+    ),
+    checkmarkColor: Colors.white,
+    elevation: isSelected ? 4 : 0,
+    pressElevation: 8,
   );
 }
   // ✅ CORRIGIDO: withValues ao invés de withOpacity

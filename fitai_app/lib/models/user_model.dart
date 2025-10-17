@@ -25,6 +25,8 @@ class UserRegistrationData {
   String horarioPreferido;
   String limitacoesFisicas;
 
+  List<int>? diasPreferidos;
+  
   // Construtor com valores padrão
   UserRegistrationData({
     this.nome = '',
@@ -48,6 +50,8 @@ class UserRegistrationData {
     this.diasDescanso = 1,
     this.horarioPreferido = 'flexible',
     this.limitacoesFisicas = '',
+
+    this.diasPreferidos,
   }) : 
     metas = metas ?? [],
     areasDesejadas = areasDesejadas ?? [],
@@ -112,7 +116,8 @@ class UserRegistrationData {
       'frequencia_semanal': frequenciaSemanal,
       'dias_descanso': diasDescanso,
       'horario_preferido': horarioPreferido,
-      'limitacoes_fisicas': limitacoesFisicas.isNotEmpty ? limitacoesFisicas : null
+      'limitacoes_fisicas': limitacoesFisicas.isNotEmpty ? limitacoesFisicas : null,
+      'preferred_training_days': diasPreferidos ?? [],
     };
   }
 
@@ -140,6 +145,7 @@ class UserRegistrationData {
       'dias_descanso': diasDescanso,
       'horario_preferido': horarioPreferido,
       'limitacoes_fisicas': limitacoesFisicas,
+      'preferred_training_days': diasPreferidos ?? [],
     };
   }
   // Conversão para JSON (para salvar dados)

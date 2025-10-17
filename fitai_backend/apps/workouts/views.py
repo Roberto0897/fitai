@@ -2356,24 +2356,33 @@ def smart_recommendation_view(request):
         
         should_rest = False
         rest_reason = None
-        
+
+        # 🆕 NOVO: Verificar se hoje é dia de descanso preferido
+        if profile.is_preferred_rest_day():
+            should_rest = True
+            rest_reason = "Hoje não é um dos seus dias preferidos de treino 📅"
+
         # Treinou hoje?
-        if days_since_last == 0:
+        elif days_since_last == 0:
             should_rest = True
             rest_reason = "Você já treinou hoje! Descanse ou faça alongamento 🧘"
-        
+
         # Atingiu meta semanal?
         elif workouts_this_week >= profile.training_frequency:
             should_rest = True
             rest_reason = f"Meta semanal atingida ({workouts_this_week}/{profile.training_frequency})! Descanse 😴"
-        
+
         # Precisa de descanso mínimo?
         elif last_session and days_since_last is not None:
             session_date = last_session.completed_at or last_session.started_at
             if session_date and profile.should_rest_today(session_date.date()):
                 should_rest = True
                 rest_reason = f"Descanso recomendado ({days_since_last}/{profile.min_rest_days_between_workouts} dias)"
-        
+                
+        # ============================================================
+        # SE DEVE DESCANSAR, RETORNA RECOMENDAÇÃO DE DESCANSO
+        # ============================================================
+
         if should_rest:
             print(f'😴 Recomendação: DESCANSO - {rest_reason}')
             return Response({
@@ -2393,7 +2402,7 @@ def smart_recommendation_view(request):
                     ]
                 }
             })
-        
+
         # ============================================================
         # 4. BUSCAR TREINO RECOMENDADO
         # ============================================================

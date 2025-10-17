@@ -1,6 +1,7 @@
 from django.db import models
 from django.contrib.auth.models import User
 from django.core.validators import MinValueValidator, MaxValueValidator
+from datetime import datetime
 
 class UserProfile(models.Model):
     # Campos existentes
@@ -127,6 +128,40 @@ class UserProfile(models.Model):
             weekday = (weekday + 1) % 7  # Converter para 0=Domingo
         
         return weekday in self.preferred_training_days
+    
+    def is_preferred_rest_day(self, weekday=None):
+        """
+        Verifica se hoje é dia de descanso preferido
+        
+        Lógica: Se preferred_training_days estiver configurado,
+        qualquer dia que NÃO esteja na lista é considerado dia de descanso.
+        
+        Args:
+            weekday: Dia da semana (0=Domingo, 1=Segunda, ..., 6=Sábado)
+                    Se None, usa o dia atual
+        
+        Returns:
+            bool: True se é dia de descanso, False caso contrário
+        
+        Exemplos:
+            >>>profile.preferred_training_days = [1, 3, 5]  # Seg, Qua, Sex
+            >>>profile.is_preferred_rest_day(0)  # Domingo
+            True
+            >>>profile.is_preferred_rest_day(1)  # Segunda
+            False
+        """
+    # Se não configurou dias preferidos, não força descanso
+        if not self.preferred_training_days:
+            return False
+        
+        # Se não passou weekday, pega o dia atual
+        if weekday is None:
+            weekday = datetime.now().weekday()
+            # Converter Python (0=Seg) para nosso padrão (0=Dom)
+            weekday = (weekday + 1) % 7
+        
+        # Se NÃO está nos dias de treino = é dia de descanso
+        return weekday not in self.preferred_training_days 
     
     def calculate_bmi(self):
         """Calcula IMC"""
