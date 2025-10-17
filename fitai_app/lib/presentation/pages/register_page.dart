@@ -88,34 +88,78 @@ class _RegisterPageOptimizedState extends State<RegisterPageOptimized> {
         debugPrint('⚠️ Aviso: Falha ao sincronizar com Django (continuando)');
       }
       
-      // 6️⃣ 🤖 GERAR TREINO PERSONALIZADO COM IA
-      debugPrint('🤖 Gerando treino personalizado com IA...');
-      
+      // 6️⃣ 🤖 GERAR TREINOS PERSONALIZADOS COM IA
+      debugPrint('🤖 Gerando treinos personalizados...');
+      debugPrint('   Frequência: ${_userData.frequenciaSemanal} dias/semana');
+      debugPrint('   Dias preferidos: ${_userData.diasPreferidos}');
+
       if (mounted) {
         setState(() {
-          // Atualizar UI para mostrar que está gerando treino
+          // UI pode mostrar "Gerando treinos..."
         });
       }
-      
-      // ✅ CORRIGIDO: Usar .toMap() para converter objeto em Map
+
       final workoutResult = await AIWorkoutGeneratorService.generatePersonalizedWorkout(
-        userData: _userData.toMap(),  // ✅ CORRIGIDO
+        userData: _userData.toMap(),
       );
-      
-      if (workoutResult != null) {
-        debugPrint('✅ Treino personalizado criado! ID: ${workoutResult['workout_id']}');
+
+      if (workoutResult != null && workoutResult['success'] == true) {
+        // ✅ NOVO: Verificar se é plano semanal ou treino único
+        final isWeeklyPlan = workoutResult['is_weekly_plan'] ?? false;
         
-        if (mounted) {
-          _showSuccessMessage(
-            'Cadastro realizado! Seu treino personalizado está pronto! 🎉'
-          );
+        if (isWeeklyPlan) {
+          // ============================================================
+          // PLANO SEMANAL CRIADO
+          // ============================================================
+          final totalWorkouts = workoutResult['plan_summary']['total_workouts'];
+          final frequency = workoutResult['plan_summary']['frequency'];
+          final totalDuration = workoutResult['plan_summary']['total_weekly_duration'];
+          
+          debugPrint('✅ Plano semanal criado!');
+          debugPrint('   Total de treinos: $totalWorkouts');
+          debugPrint('   Frequência: ${frequency}x/semana');
+          debugPrint('   Duração total semanal: ${totalDuration}min');
+          
+          // Listar treinos criados
+          if (workoutResult['workouts'] != null) {
+            debugPrint('📋 Treinos do plano:');
+            for (var workout in workoutResult['workouts']) {
+              debugPrint('   ${workout['name']} (${workout['duration']}min, ${workout['exercises_count']} exercícios)');
+            }
+          }
+          
+          if (mounted) {
+            _showSuccessMessage(
+              '✅ Cadastro completo!\n'
+              '🎉 Seu plano de $totalWorkouts treinos está pronto!\n'
+              '📅 ${frequency}x por semana, total de ${totalDuration}min'
+            );
+          }
+          
+        } else {
+          // ============================================================
+          // TREINO ÚNICO CRIADO
+          // ============================================================
+          debugPrint('✅ Treino único criado!');
+          debugPrint('   ID: ${workoutResult['workout_id']}');
+          debugPrint('   Nome: ${workoutResult['workout_name']}');
+          debugPrint('   Exercícios: ${workoutResult['exercises_count']}');
+          
+          if (mounted) {
+            _showSuccessMessage(
+              '✅ Cadastro completo!\n'
+              '🎉 Seu treino personalizado está pronto!'
+            );
+          }
         }
       } else {
-        debugPrint('⚠️ Não foi possível gerar treino automaticamente');
+        // ⚠️ Falha ao gerar treinos (não crítico)
+        debugPrint('⚠️ Não foi possível gerar treinos automaticamente');
         
         if (mounted) {
           _showSuccessMessage(
-            'Cadastro realizado! Você pode gerar seu treino no dashboard.'
+            '✅ Cadastro realizado!\n'
+            'Você pode gerar seus treinos no dashboard.'
           );
         }
       }
@@ -208,7 +252,8 @@ class _RegisterPageOptimizedState extends State<RegisterPageOptimized> {
 
       case 6:  // 🆕 NOVO - Step 6A: Preferências avançadas
       return _userData.frequenciaSemanal > 0 &&
-             _userData.diasDescanso >= 0;
+         (_userData.diasPreferidos?.length ?? 0) == _userData.frequenciaSemanal &&
+         _userData.horarioPreferido.isNotEmpty;
       case 7:
         // Step 7: Finalização (sempre válido)
         return true;
@@ -840,7 +885,7 @@ class _RegisterPageOptimizedState extends State<RegisterPageOptimized> {
       ),
     );
   }
-  Widget _buildStep6A() {  // Preferências avançadas
+  Widget _buildStep6A() {
   return Padding(
     padding: const EdgeInsets.all(20.0),
     child: SingleChildScrollView(
@@ -871,7 +916,7 @@ class _RegisterPageOptimizedState extends State<RegisterPageOptimized> {
 
           const SizedBox(height: 30),
 
-          // 🆕 NOVA PERGUNTA: Quais dias prefere treinar
+          // 📅 Dias preferidos
           const Text(
             'Em quais dias você prefere treinar?',
             style: TextStyle(color: Colors.white, fontSize: 16),
@@ -896,20 +941,6 @@ class _RegisterPageOptimizedState extends State<RegisterPageOptimized> {
               _buildDayChip('Sáb', 6),
             ],
           ),
-
-          const SizedBox(height: 30),
-
-          // 💤 Dias de descanso
-          const Text(
-            'Precisa descansar entre treinos?',
-            style: TextStyle(color: Colors.white, fontSize: 16),
-          ),
-          const SizedBox(height: 15),
-          _buildRestOption('Sim, 1 dia entre treinos', 1),
-          const SizedBox(height: 10),
-          _buildRestOption('Sim, 2 dias entre treinos', 2),
-          const SizedBox(height: 10),
-          _buildRestOption('Não, posso treinar seguido', 0),
 
           const SizedBox(height: 30),
 
@@ -969,7 +1000,7 @@ Widget _buildFrequencyOption(int days) {
       width: 50,
       height: 50,
       decoration: BoxDecoration(
-        color: isSelected ? const Color(0xFF00BCD4) : Colors.white,
+        color: isSelected ? const Color.fromARGB(255, 68, 215, 235) : Colors.white,
         shape: BoxShape.circle,
         border: Border.all(
           color: isSelected ? const Color(0xFF00BCD4) : Colors.grey,
@@ -990,35 +1021,7 @@ Widget _buildFrequencyOption(int days) {
   );
 }
 
-Widget _buildRestOption(String text, int days) {
-  bool isSelected = _userData.diasDescanso == days;
-  return GestureDetector(
-    onTap: () {
-      setState(() {
-        _userData.diasDescanso = days;
-      });
-    },
-    child: Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      decoration: BoxDecoration(
-        color: isSelected ? const Color(0xFF00BCD4) : Colors.white,
-        borderRadius: BorderRadius.circular(15),
-        border: Border.all(
-          color: isSelected ? const Color(0xFF00BCD4) : Colors.grey,
-        ),
-      ),
-      child: Text(
-        text,
-        textAlign: TextAlign.center,
-        style: TextStyle(
-          color: isSelected ? Colors.white : Colors.black,
-          fontSize: 14,
-        ),
-      ),
-    ),
-  );
-}
+
 
 Widget _buildTimeOption(String text, String value) {
   bool isSelected = _userData.horarioPreferido == value;
@@ -1088,112 +1091,137 @@ Widget _buildDayChip(String label, int dayNumber) {
   );
 }
   // ✅ CORRIGIDO: withValues ao invés de withOpacity
-  Widget _buildStep7() {
-    return Padding(
-      padding: const EdgeInsets.all(20.0),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Text(
-            'Analisando seu perfil e criando\no treino perfeito para você!',
-            style: TextStyle(
-              color: Colors.white, 
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
+ Widget _buildStep7() {
+  return Padding(
+    padding: const EdgeInsets.all(20.0),
+    child: Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const Text(
+          'Analisando seu perfil e criando\no treino perfeito para você!',
+          style: TextStyle(
+            color: Colors.white, 
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+          ),
+          textAlign: TextAlign.center,
+        ),
+        
+        const SizedBox(height: 16),
+        
+        // ✅ NOVO: Mostrar quantos treinos está gerando
+        if (_userData.frequenciaSemanal > 0)
+          Text(
+            'Gerando ${_userData.frequenciaSemanal} treinos personalizados...',
+            style: const TextStyle(
+              color: Color(0xFF00BCD4),
+              fontSize: 14,
             ),
             textAlign: TextAlign.center,
           ),
-          
-          const SizedBox(height: 40),
-          
-          // Animação de loading com ícone de IA
-          Stack(
-            alignment: Alignment.center,
+        
+        const SizedBox(height: 40),
+        
+        // Animação de loading
+        Stack(
+          alignment: Alignment.center,
+          children: [
+            const SizedBox(
+              width: 120,
+              height: 120,
+              child: CircularProgressIndicator(
+                strokeWidth: 6,
+                valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF00BCD4)),
+              ),
+            ),
+            Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: const Color(0xFF00BCD4).withValues(alpha: 0.2),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.psychology,
+                size: 40,
+                color: Color(0xFF00BCD4),
+              ),
+            ),
+          ],
+        ),
+        
+        const SizedBox(height: 40),
+        
+        // Indicadores de progresso
+        _buildProgressStep('✓ Perfil analisado', true),
+        const SizedBox(height: 12),
+        _buildProgressStep('✓ Metas identificadas', true),
+        const SizedBox(height: 12),
+        _buildProgressStep('⟳ IA gerando treinos...', false),
+        
+        const SizedBox(height: 16),
+        
+        // ✅ NOVO: Aviso sobre tempo de espera
+        Text(
+          '⏱️ Isso pode levar até 90 segundos...',
+          style: TextStyle(
+            color: Colors.grey[400],
+            fontSize: 12,
+            fontStyle: FontStyle.italic,
+          ),
+        ),
+        
+        const SizedBox(height: 50),
+        
+        // Card com dica
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                const Color(0xFF00BCD4).withValues(alpha: 0.2),
+                const Color(0xFF0097A7).withValues(alpha: 0.2),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: const Color(0xFF00BCD4),
+              width: 1,
+            ),
+          ),
+          child: const Column(
             children: [
-              const SizedBox(
-                width: 120,
-                height: 120,
-                child: CircularProgressIndicator(
-                  strokeWidth: 6,
-                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF00BCD4)),
+              Icon(
+                Icons.lightbulb_outline,
+                color: Color(0xFF00BCD4),
+                size: 40,
+              ),
+              SizedBox(height: 12),
+              Text(
+                'VOCÊ SABIA?',
+                style: TextStyle(
+                  color: Color(0xFF00BCD4),
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
-              Container(
-                width: 80,
-                height: 80,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF00BCD4).withValues(alpha: 0.2),  // ✅ CORRIGIDO
-                  shape: BoxShape.circle,
+              SizedBox(height: 8),
+              Text(
+                'Nossa IA analisa mais de 15 fatores do seu\nperfil para criar treinos específicos\npara cada dia da semana!',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 14,
                 ),
-                child: const Icon(
-                  Icons.psychology,
-                  size: 40,
-                  color: Color(0xFF00BCD4),
-                ),
+                textAlign: TextAlign.center,
               ),
             ],
           ),
-          
-          const SizedBox(height: 40),
-          
-          // Indicadores de progresso
-          _buildProgressStep('✓ Perfil analisado', true),
-          const SizedBox(height: 12),
-          _buildProgressStep('✓ Metas identificadas', true),
-          const SizedBox(height: 12),
-          _buildProgressStep('⟳ IA gerando treino...', false),
-          
-          const SizedBox(height: 50),
-          
-          // Card com dica - ✅ CORRIGIDO
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  const Color(0xFF00BCD4).withValues(alpha: 0.2),  // ✅ CORRIGIDO
-                  const Color(0xFF0097A7).withValues(alpha: 0.2),  // ✅ CORRIGIDO
-                ],
-              ),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: const Color(0xFF00BCD4),
-                width: 1,
-              ),
-            ),
-            child: const Column(
-              children: [
-                Icon(
-                  Icons.lightbulb_outline,
-                  color: Color(0xFF00BCD4),
-                  size: 40,
-                ),
-                SizedBox(height: 12),
-                Text(
-                  'VOCÊ SABIA?',
-                  style: TextStyle(
-                    color: Color(0xFF00BCD4),
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                SizedBox(height: 8),
-                Text(
-                  'Nossa IA analisa mais de 15 fatores do seu\nperfil para criar o treino ideal!',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+        ),
+      ],
+    ),
+  );
+}
 
   // Helper widget para steps de progresso
   Widget _buildProgressStep(String text, bool completed) {
@@ -1485,16 +1513,26 @@ Widget _buildDayChip(String label, int dayNumber) {
 
   void _nextPage() {
     if (_validateCurrentStep()) {
-      if (_currentPage < 6) {
+      if (_currentPage < 7) {
         _pageController.nextPage(
           duration: const Duration(milliseconds: 300),
           curve: Curves.easeInOut,
         );
+     // ✅ NOVO: Se avançou para página 7 (loading), iniciar geração automaticamente
+      if (_currentPage == 6) {  // Estava na Step 6A, agora vai para Step 7
+        // Pequeno delay para garantir que a animação de transição termine
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (mounted && _currentPage == 7 && !_isLoading) {
+            debugPrint('🚀 Auto-iniciando geração de treinos...');
+            _finishRegistration();
+          }
+        });
       }
-    } else {
-      _showErrorMessage('Por favor, preencha todos os campos obrigatórios');
     }
+  } else {
+    _showErrorMessage('Por favor, preencha todos os campos obrigatórios');
   }
+}
 
   void _previousPage() {
     if (_currentPage > 0) {

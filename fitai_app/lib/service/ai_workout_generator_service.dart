@@ -45,9 +45,9 @@ class AIWorkoutGeneratorService {
         },
         body: json.encode(body),
       ).timeout(
-        const Duration(seconds: 30),
+        const Duration(seconds: 90),
         onTimeout: () {
-          print('⏰ Timeout após 30s');
+          print('⏰ Timeout após 90s');
           throw Exception('Timeout na geração do treino');
         },
       );
@@ -60,12 +60,35 @@ class AIWorkoutGeneratorService {
         
         if (data['success'] == true) {
           print('✅ Treino gerado com sucesso!');
+          // ✅ NOVO: Verificar se é plano semanal
+        final isWeeklyPlan = data['is_weekly_plan'] ?? false;
+        
+        if (isWeeklyPlan) {
+          // PLANO SEMANAL
+          final planSummary = data['plan_summary'];
+          final workouts = data['workouts'];
+          
+          print('📅 Plano semanal gerado:');
+          print('   Total de treinos: ${planSummary['total_workouts']}');
+          print('   Frequência: ${planSummary['frequency']}x/semana');
+          
+          return {
+            'success': true,
+            'is_weekly_plan': true,
+            'plan_summary': planSummary,
+            'workouts': workouts,
+            'message': data['message'],
+          };
+        } else {
+          // TREINO ÚNICO
+          print('📝 Treino único gerado:');
           print('🏋️ Workout ID: ${data['workout_id']}');
           print('📝 Nome: ${data['workout_name']}');
           print('💪 Exercícios: ${data['exercises_count']}');
           
           return {
             'success': true,
+            'is_weekly_plan': false,
             'workout_id': data['workout_id'],
             'workout_name': data['workout_name'],
             'exercises_count': data['exercises_count'],
@@ -73,25 +96,26 @@ class AIWorkoutGeneratorService {
             'message': data['message'],
           };
         }
-      } else if (response.statusCode == 503) {
-        print('⚠️ Serviço temporariamente indisponível');
-        final data = json.decode(response.body);
-        return {
-          'success': false,
-          'message': data['message'] ?? 'Serviço indisponível',
-        };
-      } else {
-        print('❌ Erro ${response.statusCode}: ${response.body}');
       }
-      
-      return null;
-      
-    } catch (e, stackTrace) {
-      print('❌ Erro ao gerar treino de onboarding: $e');
-      print('Stack trace: $stackTrace');
-      return null;
+    } else if (response.statusCode == 503) {
+      print('⚠️ Serviço temporariamente indisponível');
+      final data = json.decode(response.body);
+      return {
+        'success': false,
+        'message': data['message'] ?? 'Serviço indisponível',
+      };
+    } else {
+      print('❌ Erro ${response.statusCode}: ${response.body}');
     }
+    
+    return null;
+    
+  } catch (e, stackTrace) {
+    print('❌ Erro ao gerar treino de onboarding: $e');
+    print('Stack trace: $stackTrace');
+    return null;
   }
+}
   
   /// Busca recomendações usando sistema existente
   static Future<List<Map<String, dynamic>>> getRecommendations({

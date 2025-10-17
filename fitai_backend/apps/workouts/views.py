@@ -1990,87 +1990,131 @@ def cancel_active_session(request, session_id):
         )
     
 
+# ============================================================
+# ✅ VERSÃO ALTERNATIVA - COM FUNÇÕES SEPARADAS
+# ============================================================
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def generate_onboarding_workout(request):
-    """
-    🤖 Gera treino personalizado com IA durante o cadastro/onboarding
-    """
+    """Gera PLANO SEMANAL ou TREINO ÚNICO"""
     try:
         from django.conf import settings
         import google.generativeai as genai
         
         user = request.user
         user_data = request.data.get('user_data', {})
-        ai_prompt = request.data.get('ai_prompt')
-        create_workout = request.data.get('create_workout', True)
         
-        print(f"🤖 Gerando treino IA para: {user.email}")
+        print(f"🤖 Gerando treino(s) para: {user.email}")
         
-        # Construir prompt
-        if not ai_prompt:
-            ai_prompt = _build_onboarding_prompt(user_data)
+        # ============================================================
+        # VERIFICAR TIPO DE GERAÇÃO
+        # ============================================================
         
-        # ✅ CONFIGURAR GEMINI
+        frequencia = user_data.get('frequencia_semanal', 0)
+        generate_plan = frequencia > 0
+        
+        # ============================================================
+        # CONSTRUIR PROMPT (usando funções auxiliares)
+        # ============================================================
+        
+        if generate_plan:
+            print(f"📅 Gerando PLANO SEMANAL: {frequencia} dias/semana")
+            ai_prompt = _build_weekly_plan_prompt(user_data)  # ← Função nova
+        else:
+            print(f"📝 Gerando treino único")
+            ai_prompt = _build_onboarding_prompt(user_data)  # ← Função antiga
+        
+        # ============================================================
+        # CHAMAR IA
+        # ============================================================
+        
         api_key = getattr(settings, 'GEMINI_API_KEY', '')
         if not api_key:
-            raise ValueError("GEMINI_API_KEY não está configurada")
+            raise ValueError("GEMINI_API_KEY não configurada")
         
         genai.configure(api_key=api_key)
-        
-        # ✅ USAR EXATAMENTE O MESMO PADRÃO DO CHAT SERVICE
         model_name = getattr(settings, 'GEMINI_MODEL', 'gemini-2.0-flash-exp')
-        print(f"🤖 Modelo: {model_name}")
-        
         model = genai.GenerativeModel(model_name)
-        print("📡 Chamando Gemini...")
-        response = model.generate_content(ai_prompt)
+        # Configuração otimizada
+        generation_config = {
+            'max_output_tokens': 4000,
+            'temperature': 0.5,
+            'response_mime_type': 'application/json',  # FORÇA JSON
+        }
+
+        response = model.generate_content(
+        ai_prompt,
+        generation_config=generation_config
+    )
+
+        plan_data = _extract_json_from_ai_response(response.text)
         
-        ai_text = response.text
-        print(f"✅ Resposta: {len(ai_text)} chars")
+        if not plan_data:
+            raise ValueError("JSON inválido")
         
-        # Parsear JSON
-        workout_data = _extract_json_from_ai_response(ai_text)
+        # ============================================================
+        # CRIAR TREINOS
+        # ============================================================
         
-        if not workout_data:
-            raise ValueError("JSON inválido da IA")
-        
-        # Criar treino
-        if create_workout:
-            workout = _create_ai_workout(user, workout_data, user_data)
+        if generate_plan and 'weekly_plan' in plan_data:
+            # PLANO SEMANAL
+            created_workouts = []
+            
+            for idx, workout_data in enumerate(plan_data['weekly_plan']):
+                workout = _create_ai_workout(
+                    user, workout_data, user_data,
+                    is_part_of_plan=True,
+                    plan_day=idx + 1
+                )
+                created_workouts.append({
+                    'id': workout.id,
+                    'name': workout.name,
+                    'duration': workout.estimated_duration,
+                    'exercises_count': workout.workout_exercises.count(),
+                })
             
             return Response({
                 'success': True,
-                'message': 'Treino criado com sucesso!',
+                'is_weekly_plan': True,
+                'message': f'{len(created_workouts)} treinos criados!',
+                'plan_summary': {
+                    'total_workouts': len(created_workouts),
+                    'frequency': frequencia,
+                    'total_weekly_duration': sum(w['duration'] for w in created_workouts),
+                },
+                'workouts': created_workouts,
+            }, status=status.HTTP_201_CREATED)
+            
+        else:
+            # TREINO ÚNICO
+            workout = _create_ai_workout(user, plan_data, user_data)
+            
+            return Response({
+                'success': True,
+                'is_weekly_plan': False,
                 'workout_id': workout.id,
                 'workout_name': workout.name,
                 'exercises_count': workout.workout_exercises.count(),
-                'estimated_duration': workout.estimated_duration,
-                'difficulty_level': workout.difficulty_level,
-                #'is_ai_generated': True,
                 'is_recommended': True,
             }, status=status.HTTP_201_CREATED)
-        else:
-            return Response({
-                'success': True,
-                'workout_data': workout_data,
-            })
             
     except Exception as e:
         print(f"❌ Erro: {str(e)}")
         import traceback
         traceback.print_exc()
-        
         return Response({
             'error': 'Erro ao gerar treino',
             'details': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-# ====== gerar treinos final do cadrasto======
+# ============================================================
+# ✅ MANTER A FUNÇÃO ANTIGA (para treino único)
+# ============================================================
 
 def _build_onboarding_prompt(user_data):
-    """Constrói prompt detalhado"""
+    """Constrói prompt para TREINO ÚNICO"""
     
     # Calcular IMC
     peso = user_data.get('peso_atual', 0)
@@ -2090,31 +2134,31 @@ def _build_onboarding_prompt(user_data):
         else:
             imc_cat = 'Obesidade'
     
-    # Mapear nível -> dificuldade
+    # Mapear nível
     nivel = user_data.get('nivel_atividade', '').lower()
     if 'sedentário' in nivel or 'sedentario' in nivel:
         difficulty = 'beginner'
-        days = 3
     elif 'moderado' in nivel:
         difficulty = 'beginner'
-        days = 4
     elif 'ativo' in nivel and 'muito' not in nivel:
         difficulty = 'intermediate'
-        days = 5
     else:
         difficulty = 'intermediate'
-        days = 6
     
     # Exercícios por tempo
     tempo = user_data.get('tempo_disponivel', '30-45')
     if '15-30' in tempo:
         ex_count = 5
+        duration = 25
     elif '30-45' in tempo:
         ex_count = 7
+        duration = 35
     elif '45-60' in tempo:
         ex_count = 9
+        duration = 50
     else:
         ex_count = 10
+        duration = 60
     
     metas = ', '.join(user_data.get('metas', ['Condicionamento geral']))
     areas = ', '.join(user_data.get('areas_desejadas', ['Corpo completo']))
@@ -2141,16 +2185,15 @@ Crie um treino personalizado COMPLETO para:
 
 💪 CRIAR TREINO:
 - Dificuldade: {difficulty}
-- {days} dias/semana
 - {ex_count} exercícios
-- Duração: {tempo}
+- Duração: {duration}min
 
 ⚠️ FORMATO JSON OBRIGATÓRIO (SEM MARKDOWN):
 {{
   "workout_name": "Nome Motivacional do Treino",
   "description": "Descrição clara dos objetivos (2-3 linhas)",
   "difficulty_level": "{difficulty}",
-  "estimated_duration": {30 if '30-45' in tempo else 45},
+  "estimated_duration": {duration},
   "target_muscle_groups": "{areas}",
   "equipment_needed": "{equip}",
   "workout_type": "full_body",
@@ -2183,48 +2226,143 @@ Crie um treino personalizado COMPLETO para:
 '''
 
 
-def _extract_json_from_ai_response(text):
-    """Extrai JSON da resposta (remove markdown)"""
+# ============================================================
+# 🆕 NOVA FUNÇÃO: Prompt para plano semanal
+# ============================================================
+
+def _build_weekly_plan_prompt(user_data):
+    """Constrói prompt para PLANO SEMANAL - VERSÃO OTIMIZADA"""
     
-    # Remover blocos markdown
-    json_match = re.search(r'```json\s*(.*?)\s*```', text, re.DOTALL)
-    if json_match:
-        json_text = json_match.group(1)
+    peso = user_data.get('peso_atual', 0)
+    altura = user_data.get('altura', 0)
+    imc = 0
+    
+    if peso > 0 and altura > 0:
+        altura_m = altura / 100
+        imc = peso / (altura_m * altura_m)
+    
+    nivel = user_data.get('nivel_atividade', '').lower()
+    if 'sedentário' in nivel or 'sedentario' in nivel:
+        difficulty = 'beginner'
+    elif 'moderado' in nivel:
+        difficulty = 'beginner'
+    elif 'ativo' in nivel and 'muito' not in nivel:
+        difficulty = 'intermediate'
     else:
-        # Buscar objeto JSON
-        json_match = re.search(r'\{.*\}', text, re.DOTALL)
-        if json_match:
-            json_text = json_match.group(0)
+        difficulty = 'intermediate'
+    
+    tempo = user_data.get('tempo_disponivel', '30-45')
+    if '15-30' in tempo:
+        ex_count = 4
+        duration = 25
+    elif '30-45' in tempo:
+        ex_count = 5
+        duration = 35
+    elif '45-60' in tempo:
+        ex_count = 6
+        duration = 50
+    else:
+        ex_count = 7
+        duration = 60
+    
+    equip = user_data.get('equipamentos', 'Sem equipamentos')
+    frequencia = user_data.get('frequencia_semanal', 3)
+    
+    dias_semana = ['Domingo', 'Segunda', 'Terca', 'Quarta', 'Quinta', 'Sexta', 'Sabado']
+    
+    if frequencia <= 2:
+        focos = ['full_body', 'full_body']
+    elif frequencia == 3:
+        focos = ['upper_body', 'lower_body', 'full_body']
+    elif frequencia == 4:
+        focos = ['upper_body', 'lower_body', 'upper_body', 'cardio']
+    elif frequencia == 5:
+        focos = ['chest_arms', 'legs', 'back_shoulders', 'full_body', 'cardio']
+    else:
+        focos = ['chest', 'legs', 'back', 'shoulders_arms', 'full_body', 'cardio']
+    
+    dias_preferidos = user_data.get('preferred_training_days', [])
+    if dias_preferidos:
+        dias_treino = [dias_semana[d] for d in sorted(dias_preferidos[:frequencia])]
+    else:
+        if frequencia == 3:
+            dias_treino = ['Segunda', 'Quarta', 'Sexta']
+        elif frequencia == 4:
+            dias_treino = ['Segunda', 'Terca', 'Quinta', 'Sexta']
         else:
-            json_text = text
+            dias_treino = dias_semana[:frequencia]
     
-    try:
-        return json.loads(json_text)
-    except json.JSONDecodeError as e:
-        print(f"⚠️ Erro JSON: {e}")
-        print(f"Texto: {json_text[:300]}...")
-        return None
+    # PROMPT SIMPLIFICADO
+    return f'''
+Create {frequencia} workout plan in VALID JSON format.
+
+USER: {user_data.get('nome', 'User')}, {user_data.get('idade', 25)}yo
+IMC: {imc:.1f}, Weight: {peso}kg, Level: {difficulty}
+
+RULES:
+- Return ONLY valid JSON (no markdown, no comments)
+- Exactly {frequencia} workouts
+- Each with {ex_count} exercises
+- Duration {duration}min each
+- Keep descriptions under 80 chars
+- NO special characters in strings
+- NO line breaks in strings
+
+JSON FORMAT:
+{{
+  "weekly_plan": [
+    {{
+      "day_name": "Monday",
+      "workout_name": "Chest Monday",
+      "description": "Chest workout",
+      "difficulty_level": "{difficulty}",
+      "estimated_duration": {duration},
+      "target_muscle_groups": "chest",
+      "equipment_needed": "{equip}",
+      "workout_type": "upper_body",
+      "calories_estimate": 250,
+      "exercises": [
+        {{
+          "name": "Push Up",
+          "description": "Standard push up",
+          "muscle_group": "chest",
+          "difficulty_level": "{difficulty}",
+          "equipment_needed": "bodyweight",
+          "duration_minutes": 5,
+          "sets": 3,
+          "reps": "12",
+          "rest_time": 60,
+          "order_in_workout": 1,
+          "instructions": ["Step 1", "Step 2"],
+          "tips": ["Keep core tight"]
+        }}
+      ]
+    }}
+  ]
+}}
+
+DAYS: {', '.join(dias_treino[:frequencia])}
+FOCUS: {', '.join(focos[:frequencia])}
+'''
 
 
-def _create_ai_workout(user, workout_data, user_profile):
-    """
-    Cria Workout usando APENAS campos existentes
+# ============================================================
+# FUNÇÃO _create_ai_workout (atualizar)
+# ============================================================
+
+def _create_ai_workout(user, workout_data, user_profile, is_part_of_plan=False, plan_day=None):
+    """Cria Workout no banco"""
     
-    🔥 CAMPOS USADOS (já existem no seu modelo):
-    - is_recommended = True (marca como treino IA)
-    - is_personalized = True
-    - created_by_user = user
-    - description (pode incluir info da IA aqui)
-    """
-    
-    # Adicionar metadata da IA na descrição
-    ai_metadata = f"\n\n🤖 Treino gerado por IA em {timezone.now().strftime('%d/%m/%Y')}"
-    ai_metadata += f"\n📊 Baseado em: {', '.join(user_profile.get('metas', []))}"
+    # Metadata
+    if is_part_of_plan:
+        ai_metadata = f"\n\n🤖 Treino {plan_day} do Plano Semanal"
+    else:
+        ai_metadata = f"\n\n🤖 Treino gerado por IA"
     
     description = workout_data.get('description', '')
     full_description = description + ai_metadata
     
-    # Criar workout
+    # ✅ CRÍTICO: is_recommended=True
     workout = Workout.objects.create(
         name=workout_data.get('workout_name', 'Treino Personalizado'),
         description=full_description,
@@ -2234,19 +2372,14 @@ def _create_ai_workout(user, workout_data, user_profile):
         equipment_needed=workout_data.get('equipment_needed', 'Variado'),
         calories_estimate=workout_data.get('calories_estimate', 200),
         workout_type=workout_data.get('workout_type', 'full_body'),
-        # 🔥 USAR CAMPOS EXISTENTES
-        is_recommended=True,  # Marca como treino gerado por IA
-        is_personalized=True,  # Personalizado para o usuário
-        created_by_user=user,  # Dono do treino
+        is_recommended=True,      # ✅ Vai para "Recomendados FitAI"
+        created_by_user=user,
     )
-    
-    print(f"✅ Workout criado: {workout.name} (ID: {workout.id})")
     
     # Adicionar exercícios
     exercises_data = workout_data.get('exercises', [])
     
     for idx, ex_data in enumerate(exercises_data, start=1):
-        # Buscar ou criar exercício
         exercise, created = Exercise.objects.get_or_create(
             name=ex_data.get('name', f'Exercício {idx}'),
             defaults={
@@ -2261,12 +2394,6 @@ def _create_ai_workout(user, workout_data, user_profile):
             }
         )
         
-        if created:
-            print(f"  ✅ Exercício criado: {exercise.name}")
-        else:
-            print(f"  ♻️ Exercício existente: {exercise.name}")
-        
-        # Criar WorkoutExercise
         WorkoutExercise.objects.create(
             workout=workout,
             exercise=exercise,
@@ -2278,9 +2405,126 @@ def _create_ai_workout(user, workout_data, user_profile):
             notes='\n'.join(ex_data.get('tips', [])),
         )
     
-    print(f"✅ Total: {len(exercises_data)} exercícios adicionados")
-    
     return workout
+
+def _extract_json_from_ai_response(text):
+    """Extrai e limpa JSON - VERSÃO ROBUSTA"""
+    import re
+    import json
+    
+    print(f'📝 Processando {len(text)} caracteres...')
+    
+    # ============================================================
+    # 1. EXTRAIR JSON
+    # ============================================================
+    json_match = re.search(r'```(?:json)?\s*(.*?)\s*```', text, re.DOTALL)
+    if json_match:
+        json_text = json_match.group(1)
+        print('✅ JSON extraído de markdown')
+    else:
+        json_match = re.search(r'\{.*\}', text, re.DOTALL)
+        if json_match:
+            json_text = json_match.group(0)
+            print('✅ JSON extraído diretamente')
+        else:
+            print('❌ JSON não encontrado')
+            return None
+    
+    # ============================================================
+    # 2. LIMPEZA AGRESSIVA
+    # ============================================================
+    
+    # Remove caracteres de controle
+    json_text = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', json_text)
+    
+    # Remove comentários
+    json_text = re.sub(r'//.*?\n', '\n', json_text)
+    json_text = re.sub(r'/\*.*?\*/', '', json_text, flags=re.DOTALL)
+    
+    # Remove quebras de linha DENTRO de strings (CRÍTICO!)
+    def remove_newlines_in_strings(match):
+        string_content = match.group(1)
+        # Remove \n e \r
+        cleaned = string_content.replace('\n', ' ').replace('\r', ' ')
+        # Remove espaços múltiplos
+        cleaned = re.sub(r'\s+', ' ', cleaned)
+        # Remove aspas internas (causa erro)
+        cleaned = cleaned.replace('"', '')
+        return f'"{cleaned.strip()}"'
+    
+    # Aplicar limpeza em todas as strings
+    json_text = re.sub(r'"((?:[^"\\]|\\.)*)?"', remove_newlines_in_strings, json_text)
+    
+    # Truncar strings muito longas
+    def truncate_long_strings(match):
+        content = match.group(1)
+        if len(content) > 300:
+            return f'"{content[:297]}..."'
+        return match.group(0)
+    
+    json_text = re.sub(r'"([^"]{300,})"', truncate_long_strings, json_text)
+    
+    # Remove trailing commas
+    json_text = re.sub(r',(\s*[}\]])', r'\1', json_text)
+    
+    # ============================================================
+    # 3. PARSEAR JSON
+    # ============================================================
+    try:
+        data = json.loads(json_text)
+        print('✅ JSON parseado com sucesso!')
+        
+        # Validar estrutura
+        if 'weekly_plan' in data:
+            if isinstance(data['weekly_plan'], list) and len(data['weekly_plan']) > 0:
+                print(f'✅ Plano com {len(data["weekly_plan"])} treinos')
+                return data
+            else:
+                print('❌ weekly_plan inválido')
+                return None
+        elif 'exercises' in data:
+            if isinstance(data['exercises'], list) and len(data['exercises']) > 0:
+                print(f'✅ Treino com {len(data["exercises"])} exercícios')
+                return data
+            else:
+                print('❌ exercises inválido')
+                return None
+        else:
+            print('⚠️ Estrutura desconhecida, mas JSON válido')
+            return data
+            
+    except json.JSONDecodeError as e:
+        print(f'❌ ERRO JSON: linha {e.lineno}, coluna {e.colno}')
+        print(f'   Mensagem: {e.msg}')
+        
+        # Mostrar contexto do erro
+        lines = json_text.split('\n')
+        if e.lineno <= len(lines):
+            start = max(0, e.lineno - 2)
+            end = min(len(lines), e.lineno + 1)
+            print('📍 Contexto:')
+            for i in range(start, end):
+                prefix = '>>> ' if i == e.lineno - 1 else '    '
+                print(f'{prefix}L{i+1}: {lines[i][:100]}')
+        
+        # Salvar para análise
+        try:
+            import tempfile, os
+            error_file = os.path.join(
+                tempfile.gettempdir(), 
+                f'gemini_error_{int(timezone.now().timestamp())}.txt'
+            )
+            with open(error_file, 'w', encoding='utf-8') as f:
+                f.write('=== RESPOSTA ORIGINAL ===\n\n')
+                f.write(text)
+                f.write('\n\n=== JSON LIMPO ===\n\n')
+                f.write(json_text)
+            print(f'💾 Erro salvo em: {error_file}')
+        except Exception as save_err:
+            print(f'⚠️ Não salvou arquivo: {save_err}')
+        
+        return None
+
 
 
 # RECOMENDAR CARD
