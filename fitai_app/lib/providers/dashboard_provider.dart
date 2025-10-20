@@ -71,7 +71,7 @@ class DashboardProvider extends ChangeNotifier {
   
   // Recomendação IA
   String get aiRecommendation => _aiMotivationalMessage ?? 'Mantenha a consistência nos treinos!';
-  int get daysSinceLastWorkout => _daysSinceLastWorkout ?? 0;
+  int? get daysSinceLastWorkout => _daysSinceLastWorkout;
   bool get isLoadingAIRecommendation => _isLoadingAIRecommendation;
 
    // 🔥 NOVO: Getters da recomendação diária
@@ -80,11 +80,39 @@ class DashboardProvider extends ChangeNotifier {
   String get aiRecommendationType => _aiRecommendationType;
   String get aiRecommendationEmoji => _aiRecommendationEmoji;
   
-  String get daysSinceLastWorkoutText {
-    if (_daysSinceLastWorkout == null) return 'Sem dados';
-    if (_daysSinceLastWorkout == 0) return 'Treinou hoje!';
-    if (_daysSinceLastWorkout == 1) return '1 dia desde último treino';
-    return '$_daysSinceLastWorkout dias desde último treino';
+  /// 🔥 NOVO: Badge com informações visuais
+  Map<String, dynamic> get workoutStatusBadge {
+    if (_daysSinceLastWorkout == null) {
+      return {
+        'icon': '🆕',
+        'text': 'Novo por aqui',
+        'color': const Color(0xFF2196F3), // Azul
+      };
+    } else if (_daysSinceLastWorkout == 0) {
+      return {
+        'icon': '🔥',
+        'text': 'Treinou hoje',
+        'color': const Color(0xFF4CAF50), // Verde
+      };
+    } else if (_daysSinceLastWorkout! <= 2) {
+      return {
+        'icon': '💪',
+        'text': 'Há ${_daysSinceLastWorkout!} dia${_daysSinceLastWorkout! > 1 ? 's' : ''}',
+        'color': const Color(0xFF4CAF50), // Verde
+      };
+    } else if (_daysSinceLastWorkout! <= 7) {
+      return {
+        'icon': '⏰',
+        'text': 'Há ${_daysSinceLastWorkout!} dias',
+        'color': const Color(0xFFFFC107), // Amarelo
+      };
+    } else {
+      return {
+        'icon': '⚠️',
+        'text': 'Hora de voltar!',
+        'color': const Color(0xFFFF6B6B), // Vermelho
+      };
+    }
   }
   
     // NOVOS GETTERS - Recomendação inteligente
@@ -453,8 +481,9 @@ Future<void> loadDailyAIRecommendation() async {
       final now = DateTime.now();
       _daysSinceLastWorkout = now.difference(lastWorkout.date).inDays;
     } else {
-      _daysSinceLastWorkout = 999;
+      _daysSinceLastWorkout = null;
     }
+    
     
     final response = await ApiService.getDailyAIRecommendation();
     
@@ -482,6 +511,27 @@ Future<void> loadDailyAIRecommendation() async {
       _aiRecommendationType = _dailyAIRecommendation!['recommendation_type'] ?? 'motivation';
       _aiRecommendationEmoji = _dailyAIRecommendation!['emoji'] ?? '💪';
       _aiMotivationalMessage = _dailyAIRecommendation!['message'];
+
+      // 🔥 NOVO: Extrair days_since_last do metadata (se disponível)
+      final metadata = _dailyAIRecommendation!['metadata'];
+      if (metadata != null && metadata['personalization_factors'] != null) {
+          final factors = metadata['personalization_factors'] as List;
+          
+          // Procurar pelo fator days_since_last
+          for (var factor in factors) {
+            if (factor.toString().contains('days_since_last:')) {
+              final daysPart = factor.toString().split(':').last.trim();
+              final parsedDays = int.tryParse(daysPart);
+              
+              // Se o backend retornou um valor válido, usar ele
+              if (parsedDays != null) {
+                _daysSinceLastWorkout = parsedDays;
+                debugPrint('   Days desde último treino (do backend): $parsedDays');
+              }
+              break;
+            }
+          }
+        }
       
       debugPrint('✅ Usando recomendação do backend (fallback)');
     } else {
@@ -502,9 +552,8 @@ Future<void> loadDailyAIRecommendation() async {
 
 /// Gera mensagem motivacional local (fallback)
 void _generateLocalMotivationalMessage() {
-  if (_workoutHistory.isEmpty) {
+  if (_daysSinceLastWorkout == null) {
     _aiMotivationalMessage = '🚀 Comece sua jornada fitness hoje!';
-    _daysSinceLastWorkout = 0;
     return;
   }
 
@@ -659,6 +708,7 @@ void _setDefaultValues() {
   _hasDailyAIRecommendation = false;
   _aiRecommendationType = 'motivation';
   _aiRecommendationEmoji = '💪';
+  
 }
 
 // ============================================

@@ -798,7 +798,7 @@ Seja específico, honesto e construtivo baseado nos dados fornecidos."""
                     last_workout_date = datetime.fromisoformat(workout_history[0].get('date', ''))
                     days_since_last = (now - last_workout_date).days
                 else:
-                    days_since_last = 999
+                    days_since_last = None
                 
                 # Analisar grupos musculares trabalhados
                 muscle_groups_worked = {}
@@ -819,7 +819,8 @@ Seja específico, honesto e construtivo baseado nos dados fornecidos."""
                     user=user, completed=True
                 ).order_by('-completed_at').first()
                 
-                days_since_last = (now - last_session.completed_at).days if last_session else 999
+                days_since_last = (now - last_session.completed_at).days if last_session else None
+
                 
                 # Grupos musculares trabalhados
                 muscle_groups_worked = {}
@@ -857,7 +858,7 @@ Seja específico, honesto e construtivo baseado nos dados fornecidos."""
             logger.error(f"Error analyzing workout history: {e}")
             return {
                 'workouts_this_week': 0,
-                'days_since_last_workout': 999,
+                'days_since_last_workout': None,
                 'muscle_groups_worked': {},
                 'underworked_groups': [],
                 'is_weekend': False,
@@ -869,6 +870,17 @@ Seja específico, honesto e construtivo baseado nos dados fornecidos."""
         
         weekday_names = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo']
         current_day = weekday_names[history.get('current_weekday', 0)]
+
+        # 🔥 TRATAMENTO DO days_since_last_workout
+        days_since = history.get('days_since_last_workout')
+        if days_since is None:
+            days_since_text = "Nenhum treino registrado"
+        elif days_since == 0:
+            days_since_text = "Treinou hoje"
+        elif days_since == 1:
+            days_since_text = "1 dia"
+        else:
+            days_since_text = f"{days_since} dias"
             
             # 🔥 NOVO: Identificar grupos musculares sobrecarregados vs negligenciados
         muscle_groups_worked = history.get('muscle_groups_worked', {})

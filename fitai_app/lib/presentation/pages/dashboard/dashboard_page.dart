@@ -1107,37 +1107,29 @@ Widget _buildInfoChip({required String icon, required String label}) {
           // ✅ RODAPÉ DINÂMICO
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
             decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.05),
-              borderRadius: BorderRadius.circular(6),
+              color: provider.workoutStatusBadge['color'].withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
               border: Border.all(
-                color: Colors.white.withOpacity(0.1),
-                width: 1,
+                color: provider.workoutStatusBadge['color'].withOpacity(0.3),
+                width: 1.5,
               ),
             ),
             child: Row(
               children: [
-                Icon(
-                  provider.daysSinceLastWorkout == 0
-                      ? Icons.check_circle
-                      : provider.daysSinceLastWorkout == 1
-                          ? Icons.schedule
-                          : Icons.trending_down,
-                  color: provider.daysSinceLastWorkout == 0
-                      ? const Color(0xFF4CAF50)
-                      : provider.daysSinceLastWorkout == 1
-                          ? const Color(0xFFFFC107)
-                          : const Color(0xFFFF6B6B),
-                  size: 14,
+                Text(
+                  provider.workoutStatusBadge['icon'],
+                  style: const TextStyle(fontSize: 16),
                 ),
-                const SizedBox(width: 6),
+                const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    provider.daysSinceLastWorkoutText,
+                    provider.workoutStatusBadge['text'],
                     style: GoogleFonts.jockeyOne(
-                      color: Colors.white70,
-                      fontSize: 11,
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
                     ),
                     overflow: TextOverflow.ellipsis,
                   ),
