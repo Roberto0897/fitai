@@ -10,6 +10,7 @@ from apps.users.models import UserProfile
 from apps.exercises.models import Exercise
 from apps.workouts.models import Workout, WorkoutSession, ExerciseLog
 
+
 logger = logging.getLogger(__name__)
 
 
@@ -718,13 +719,14 @@ Seja específico, honesto e construtivo baseado nos dados fornecidos."""
     
 
     def generate_daily_recommendation(self, user_profile: UserProfile, 
-                                    workout_history: List[Dict] = None) -> Optional[Dict]:
+                                workout_history: List[Dict] = None) -> Optional[Dict]:
         """
         Gera recomendação diária personalizada usando IA generativa
-        Retorna uma recomendação específica baseada no histórico e perfil do usuário
+        🆕 MELHORADO: Considera training_frequency, preferred_days, rest_days, limitações físicas
         """
         if not self.is_available or cache.get("gemini_temp_disabled"):
-            return None
+            logger.info("IA indisponível, usando fallback baseado em regras")
+            return self._generate_rule_based_recommendation(user_profile, workout_history)
         
         try:
             # Coletar contexto do usuário
@@ -733,11 +735,19 @@ Seja específico, honesto e construtivo baseado nos dados fornecidos."""
             # Analisar histórico recente
             history_analysis = self._analyze_recent_workout_history(user_profile.user, workout_history)
             
+            # 🆕 Análise de preferências do usuário
+            preferences_analysis = self._analyze_user_preferences(user_profile)
+            
+            # 🆕 Verificar restrições físicas
+            physical_constraints = self._check_physical_constraints(user_profile, history_analysis)
+            
             # Construir prompt específico para recomendação
             prompt = self._build_daily_recommendation_prompt(
                 user_profile, 
                 user_context, 
-                history_analysis
+                history_analysis,
+                preferences_analysis,
+                physical_constraints
             )
             
             response = self._make_gemini_request(prompt)
@@ -760,22 +770,491 @@ Seja específico, honesto e construtivo baseado nos dados fornecidos."""
                     validated_recommendation['metadata'] = {
                         'generated_at': datetime.now().isoformat(),
                         'model': settings.GEMINI_MODEL,
-                        'confidence': self._calculate_recommendation_confidence(history_analysis),
-                        'personalization_factors': [
-                            f"goal: {user_profile.goal}",
-                            f"level: {user_profile.activity_level}",
-                            f"workouts_this_week: {history_analysis.get('workouts_this_week', 0)}",
-                            f"days_since_last: {history_analysis.get('days_since_last_workout', 0)}"
-                        ]
+                        'confidence': self._calculate_recommendation_confidence(
+                            history_analysis, 
+                            preferences_analysis
+                        ),
+                        'personalization_factors': self._build_personalization_factors(
+                            user_profile,
+                            history_analysis,
+                            preferences_analysis,
+                            physical_constraints
+                        )
                     }
                     
                     return validated_recommendation
             
-            return None
+            # Fallback para regras se IA falhar
+            logger.warning("Gemini retornou resposta inválida, usando fallback")
+            return self._generate_rule_based_recommendation(user_profile, workout_history)
             
         except Exception as e:
             logger.error(f"Error generating daily recommendation: {e}")
-            return None
+            return self._generate_rule_based_recommendation(user_profile, workout_history)
+
+
+    def _analyze_user_preferences(self, user_profile: UserProfile) -> Dict:
+        """
+        🆕 Analisa preferências configuradas do usuário
+        """
+        from datetime import datetime
+        
+        today = datetime.now()
+        current_weekday = (today.weekday() + 1) % 7  # 0=Dom, 6=Sáb
+        
+        # Verificar se é dia preferido
+        is_preferred_day = user_profile.is_preferred_training_day(current_weekday)
+        is_rest_day = user_profile.is_preferred_rest_day(current_weekday)
+        
+        # Nome do dia
+        weekday_names = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado']
+        current_day_name = weekday_names[current_weekday]
+        
+        # Dias preferidos configurados
+        preferred_days_names = [
+            weekday_names[d] for d in user_profile.preferred_training_days
+        ] if user_profile.preferred_training_days else []
+        
+        # Horário preferido
+        time_preferences = {
+            'morning': 'manhã',
+            'afternoon': 'tarde',
+            'evening': 'noite',
+            'flexible': 'qualquer horário'
+        }
+        preferred_time = time_preferences.get(
+            user_profile.preferred_workout_time, 
+            'qualquer horário'
+        )
+        
+        return {
+            'training_frequency': user_profile.training_frequency,
+            'min_rest_days': user_profile.min_rest_days_between_workouts,
+            'current_day': current_day_name,
+            'current_weekday': current_weekday,
+            'is_preferred_day': is_preferred_day,
+            'is_rest_day': is_rest_day,
+            'preferred_days': preferred_days_names,
+            'preferred_time': preferred_time,
+            'has_time_preference': user_profile.preferred_workout_time != 'flexible',
+        }
+
+
+    def _check_physical_constraints(self, user_profile: UserProfile, 
+                                    history_analysis: Dict) -> Dict:
+        """
+        🆕 Verifica restrições físicas e necessidade de descanso
+        """
+        from datetime import datetime, timedelta
+        from django.utils import timezone
+        
+        constraints = {
+            'needs_rest': False,
+            'reason': None,
+            'has_limitations': False,
+            'limitations_text': None,
+            'suggested_modifications': []
+        }
+        
+        # 1. Verificar limitações físicas cadastradas
+        if user_profile.physical_limitations:
+            constraints['has_limitations'] = True
+            constraints['limitations_text'] = user_profile.physical_limitations
+            
+            # Sugerir modificações baseadas em palavras-chave
+            limitations_lower = user_profile.physical_limitations.lower()
+            
+            if any(word in limitations_lower for word in ['joelho', 'joelhos', 'knee']):
+                constraints['suggested_modifications'].append('Evitar agachamentos profundos')
+                constraints['suggested_modifications'].append('Preferir exercícios de baixo impacto')
+            
+            if any(word in limitations_lower for word in ['costas', 'lombar', 'coluna', 'back']):
+                constraints['suggested_modifications'].append('Evitar cargas muito pesadas')
+                constraints['suggested_modifications'].append('Foco em exercícios de fortalecimento de core')
+            
+            if any(word in limitations_lower for word in ['ombro', 'shoulder']):
+                constraints['suggested_modifications'].append('Cuidado com movimentos acima da cabeça')
+                constraints['suggested_modifications'].append('Preferir exercícios com amplitude controlada')
+        
+        # 2. Verificar se precisa de descanso (min_rest_days)
+        days_since_last = history_analysis.get('days_since_last_workout')
+        min_rest = user_profile.min_rest_days_between_workouts
+        
+        if days_since_last is not None and days_since_last < min_rest:
+            constraints['needs_rest'] = True
+            constraints['reason'] = f'Treinou há {days_since_last} dia(s), mínimo é {min_rest} dia(s)'
+        
+        # 3. Verificar overtraining
+        workouts_this_week = history_analysis.get('workouts_this_week', 0)
+        target_frequency = user_profile.training_frequency
+        
+        if workouts_this_week >= target_frequency:
+            constraints['needs_rest'] = True
+            constraints['reason'] = f'Meta semanal atingida ({workouts_this_week}/{target_frequency})'
+        
+        # 4. Verificar se treinou demais grupos musculares
+        overtrained_groups = []
+        muscle_groups_worked = history_analysis.get('muscle_groups_worked', {})
+        
+        # Threshold baseado no nível
+        level_thresholds = {
+            'sedentary': 2,
+            'light': 2,
+            'moderate': 3,
+            'active': 4,
+            'very_active': 5
+        }
+        threshold = level_thresholds.get(user_profile.activity_level, 3)
+        
+        for group, count in muscle_groups_worked.items():
+            if count >= threshold:
+                overtrained_groups.append(group)
+        
+        if overtrained_groups:
+            constraints['overtrained_groups'] = overtrained_groups
+            constraints['suggested_modifications'].append(
+                f'Grupos sobrecarregados: {", ".join(overtrained_groups)}'
+            )
+        
+        return constraints
+
+
+    def _build_daily_recommendation_prompt(self, profile: UserProfile, context: Dict,
+                                        history: Dict, preferences: Dict,
+                                        constraints: Dict) -> str:
+        """
+        🆕 Prompt OTIMIZADO com todas as informações do usuário
+        """
+        
+        # Mapear nível do usuário
+        level_mapping = {
+            'sedentary': 'sedentário (começando do zero)',
+            'light': 'iniciante (pouca atividade)',
+            'moderate': 'intermediário (atividade regular)',
+            'active': 'ativo (treina frequentemente)',
+            'very_active': 'muito ativo (atleta)'
+        }
+        user_level = level_mapping.get(profile.activity_level, 'intermediário')
+        
+        # Mapear objetivo
+        goal_mapping = {
+            'lose_weight': 'perder peso',
+            'gain_muscle': 'ganhar músculo',
+            'maintain': 'manter a forma',
+            'endurance': 'melhorar resistência'
+        }
+        user_goal = goal_mapping.get(profile.goal, 'fitness geral')
+        
+        # Informações de dias
+        days_since = history.get('days_since_last_workout')
+        if days_since is None:
+            days_since_text = "nunca treinou"
+        elif days_since == 0:
+            days_since_text = "treinou hoje"
+        elif days_since == 1:
+            days_since_text = "1 dia atrás"
+        else:
+            days_since_text = f"{days_since} dias atrás"
+        
+        # Grupos musculares
+        muscle_groups_worked = history.get('muscle_groups_worked', {})
+        overtrained = [g for g, c in muscle_groups_worked.items() if c >= 3]
+        underworked = history.get('underworked_groups', [])
+        
+        # Construir prompt conciso
+        prompt = f"""Personal trainer expert: crie recomendação para HOJE.
+
+    PERFIL:
+    Nome: {profile.user.first_name or 'Usuário'}
+    Objetivo: {user_goal}
+    Nível: {user_level}
+
+    PADRÃO DE TREINO:
+    Meta semanal: {preferences['training_frequency']} dias
+    Descanso mínimo: {preferences['min_rest_days']} dia(s)
+    Dia atual: {preferences['current_day']}
+    Dias preferidos: {', '.join(preferences['preferred_days']) if preferences['preferred_days'] else 'qualquer dia'}
+    Horário preferido: {preferences['preferred_time']}
+
+    SEMANA ATUAL:
+    Treinos: {history.get('workouts_this_week', 0)}/{preferences['training_frequency']}
+    Último treino: {days_since_text}
+    Grupos sobrecarregados: {', '.join(overtrained) or 'nenhum'}
+    Grupos negligenciados: {', '.join(underworked) or 'nenhum'}
+    """
+
+        # Adicionar restrições se houver
+        if constraints['needs_rest']:
+            prompt += f"\n⚠️ DESCANSO OBRIGATÓRIO: {constraints['reason']}"
+        
+        if constraints['has_limitations']:
+            prompt += f"\n⚠️ LIMITAÇÕES FÍSICAS: {constraints['limitations_text']}"
+            if constraints['suggested_modifications']:
+                prompt += f"\n   Modificações: {'; '.join(constraints['suggested_modifications'])}"
+        
+        # Adicionar se é dia preferido
+        if preferences['is_rest_day']:
+            prompt += f"\n⚠️ Hoje ({preferences['current_day']}) é dia de descanso preferido do usuário"
+        elif preferences['is_preferred_day']:
+            prompt += f"\n✅ Hoje ({preferences['current_day']}) é dia preferido para treinar"
+        
+        prompt += """
+
+    REGRAS CRÍTICAS:
+
+    1. META SEMANAL:
+    - Se atingiu meta → "rest" (descanso total)
+    - Se próximo da meta (1 treino restante) → sugerir treino leve
+
+    2. DESCANSO OBRIGATÓRIO:
+    - Se min_rest_days não cumprido → "rest" ou "active_recovery"
+    - Se é dia de descanso preferido → respeitar preferência
+
+    3. OVERTRAINING:
+    - Se grupo sobrecarregado → "active_recovery" DESSE grupo específico
+    - Nunca sugerir recuperação de grupo NÃO treinado
+
+    4. BALANCEAMENTO:
+    - Se há grupo negligenciado → "workout" do grupo negligenciado
+    - Considerar limitações físicas ao sugerir exercícios
+
+    5. DIA/HORÁRIO PREFERIDO:
+    - Se não é dia preferido e já treinou suficiente → sugerir descanso
+    - Mencionar horário preferido na dica motivacional
+
+    JSON (sem markdown):
+    {
+        "recommendation_type": "workout|rest|active_recovery|motivation",
+        "title": "Máx 50 caracteres",
+        "message": "Mensagem com nome do usuário (máx 120 chars)",
+        "focus_area": "chest|back|legs|arms|cardio|recovery|full_body",
+        "reasoning": "Explicação clara baseada nos dados",
+        "intensity": "low|moderate|high",
+        "suggested_duration": 30,
+        "motivational_tip": "Dica prática (máx 80 chars)",
+        "emoji": "emoji apropriado",
+        "respects_limitations": true,
+        "aligns_with_schedule": true
+    }
+
+    IMPORTANTE:
+    - Use o nome: {profile.user.first_name or 'Usuário'}
+    - Seja específico sobre o grupo muscular
+    - Respeite TODAS as restrições físicas
+    - Considere o horário preferido na dica
+    - Nunca force treino se precisa descansar"""
+
+        return prompt
+
+
+    def _generate_rule_based_recommendation(self, profile: UserProfile,
+                                        workout_history: List[Dict] = None) -> Dict:
+        """
+        🆕 Sistema de FALLBACK baseado em regras (quando IA não disponível)
+        """
+        analysis = self._analyze_recent_workout_history(profile.user, workout_history)
+        preferences = self._analyze_user_preferences(profile)
+        constraints = self._check_physical_constraints(profile, analysis)
+        
+        workouts_this_week = analysis.get('workouts_this_week', 0)
+        days_since_last = analysis.get('days_since_last_workout', 999)
+        target_frequency = preferences['training_frequency']
+        
+        # REGRA 1: Descanso obrigatório
+        if constraints['needs_rest']:
+            return {
+                'recommendation_type': 'rest',
+                'title': 'Dia de Descanso Necessário',
+                'message': f'{profile.user.first_name or "Você"}, seu corpo precisa de recuperação hoje.',
+                'focus_area': 'recovery',
+                'intensity': 'low',
+                'suggested_duration': 0,
+                'emoji': '😴',
+                'reasoning': constraints['reason'],
+                'motivational_tip': 'O crescimento acontece no descanso!',
+                'respects_limitations': True,
+                'aligns_with_schedule': True
+            }
+        
+        # REGRA 2: Dia de descanso preferido
+        if preferences['is_rest_day'] and workouts_this_week >= target_frequency - 1:
+            return {
+                'recommendation_type': 'rest',
+                'title': f'Aproveite seu {preferences["current_day"]}',
+                'message': f'{profile.user.first_name or "Você"} configurou hoje como dia de descanso.',
+                'focus_area': 'recovery',
+                'intensity': 'low',
+                'suggested_duration': 0,
+                'emoji': '🧘',
+                'reasoning': f'Hoje é {preferences["current_day"]}, seu dia de descanso preferido',
+                'motivational_tip': 'Descanso também faz parte do treino!',
+                'respects_limitations': True,
+                'aligns_with_schedule': True
+            }
+        
+        # REGRA 3: Meta semanal atingida
+        if workouts_this_week >= target_frequency:
+            return {
+                'recommendation_type': 'rest',
+                'title': 'Meta Semanal Completa! 🎉',
+                'message': f'{profile.user.first_name or "Você"} atingiu {workouts_this_week}/{target_frequency} treinos!',
+                'focus_area': 'recovery',
+                'intensity': 'low',
+                'suggested_duration': 0,
+                'emoji': '🏆',
+                'reasoning': f'Meta de {target_frequency} treinos/semana completa',
+                'motivational_tip': 'Parabéns! Agora é hora de recuperar.',
+                'respects_limitations': True,
+                'aligns_with_schedule': True
+            }
+        
+        # REGRA 4: Muito tempo sem treinar
+        if days_since_last >= 4:
+            underworked = analysis.get('underworked_groups', [])
+            focus = underworked[0] if underworked else 'full_body'
+            
+            # Considerar limitações
+            if constraints['has_limitations'] and focus in ['legs', 'back']:
+                focus = 'upper_body'
+            
+            return {
+                'recommendation_type': 'workout',
+                'title': 'Hora de Voltar!',
+                'message': f'{profile.user.first_name or "Você"} está há {days_since_last} dias sem treinar.',
+                'focus_area': focus,
+                'intensity': 'moderate',
+                'suggested_duration': 30,
+                'emoji': '🔥',
+                'reasoning': f'Retome gradualmente com treino de {focus}',
+                'motivational_tip': 'Começar é metade da vitória!',
+                'respects_limitations': True,
+                'aligns_with_schedule': preferences['is_preferred_day']
+            }
+        
+        # REGRA 5: Balanceamento muscular
+        underworked = analysis.get('underworked_groups', [])
+        if underworked:
+            focus = underworked[0]
+            
+            # Adaptar se houver limitações
+            if constraints['has_limitations']:
+                limitations_lower = constraints['limitations_text'].lower()
+                if ('joelho' in limitations_lower or 'knee' in limitations_lower) and focus == 'legs':
+                    focus = 'upper_body'
+                elif ('costas' in limitations_lower or 'back' in limitations_lower) and focus == 'back':
+                    focus = 'cardio'
+            
+            intensity = 'moderate' if workouts_this_week < target_frequency - 1 else 'light'
+            
+            return {
+                'recommendation_type': 'workout',
+                'title': f'Treino de {focus.replace("_", " ").title()}',
+                'message': f'{profile.user.first_name or "Você"}, vamos equilibrar o treino!',
+                'focus_area': focus,
+                'intensity': intensity,
+                'suggested_duration': 35,
+                'emoji': '💪',
+                'reasoning': f'{focus} foi pouco trabalhado esta semana',
+                'motivational_tip': f'Treino no {preferences["preferred_time"]} é perfeito!',
+                'respects_limitations': bool(constraints['has_limitations']),
+                'aligns_with_schedule': preferences['is_preferred_day']
+            }
+        
+        # REGRA PADRÃO: Continue o ritmo
+        return {
+            'recommendation_type': 'workout',
+            'title': 'Continue o Ritmo!',
+            'message': f'{profile.user.first_name or "Você"}, mais um treino hoje?',
+            'focus_area': 'full_body',
+            'intensity': 'moderate',
+            'suggested_duration': 30,
+            'emoji': '💪',
+            'reasoning': f'{workouts_this_week}/{target_frequency} treinos - mantenha a consistência',
+            'motivational_tip': f'Seu horário preferido é {preferences["preferred_time"]}!',
+            'respects_limitations': True,
+            'aligns_with_schedule': preferences['is_preferred_day']
+        }
+
+
+    def _build_personalization_factors(self, profile: UserProfile, history: Dict,
+                                    preferences: Dict, constraints: Dict) -> List[str]:
+        """
+        🆕 Constrói lista de fatores de personalização
+        """
+        factors = []
+        
+        # Objetivo
+        factors.append(f"goal: {profile.goal or 'maintain'}")
+        
+        # Nível
+        factors.append(f"level: {profile.activity_level or 'moderate'}")
+        
+        # Frequência
+        factors.append(f"frequency: {preferences['training_frequency']}/semana")
+        
+        # Progresso semanal
+        workouts = history.get('workouts_this_week', 0)
+        factors.append(f"workouts_this_week: {workouts}/{preferences['training_frequency']}")
+        
+        # Último treino
+        days_since = history.get('days_since_last_workout')
+        if days_since is not None:
+            factors.append(f"days_since_last: {days_since}")
+        
+        # Dia preferido
+        if preferences['is_preferred_day']:
+            factors.append(f"✅ Dia preferido: {preferences['current_day']}")
+        elif preferences['is_rest_day']:
+            factors.append(f"🛑 Dia de descanso: {preferences['current_day']}")
+        
+        # Horário preferido
+        if preferences['has_time_preference']:
+            factors.append(f"⏰ Horário: {preferences['preferred_time']}")
+        
+        # Limitações físicas
+        if constraints['has_limitations']:
+            factors.append(f"⚠️ Limitações: {constraints['limitations_text'][:50]}...")
+        
+        # Descanso necessário
+        if constraints['needs_rest']:
+            factors.append(f"💤 Precisa descansar: {constraints['reason']}")
+        
+        return factors
+
+
+    def _calculate_recommendation_confidence(self, history: Dict, 
+                                            preferences: Dict) -> float:
+        """
+        🆕 Calcula confiança da recomendação considerando mais fatores
+        """
+        try:
+            confidence = 0.5  # Base
+            
+            # Mais treinos = mais confiança
+            workouts = history.get('workouts_this_week', 0)
+            if workouts >= 3:
+                confidence += 0.2
+            elif workouts >= 1:
+                confidence += 0.1
+            
+            # Dados recentes = mais confiança
+            days_since = history.get('days_since_last_workout', 999)
+            if days_since <= 2:
+                confidence += 0.15
+            elif days_since <= 7:
+                confidence += 0.05
+            
+            # Preferências configuradas = mais confiança
+            if preferences.get('preferred_days'):
+                confidence += 0.1
+            
+            if preferences.get('has_time_preference'):
+                confidence += 0.05
+            
+            return min(1.0, round(confidence, 2))
+            
+        except Exception:
+            return 0.5
 
     def _analyze_recent_workout_history(self, user, workout_history: List[Dict] = None) -> Dict:
         """Analisa histórico recente de treinos para contexto"""

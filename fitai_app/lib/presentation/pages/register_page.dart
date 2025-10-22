@@ -1077,7 +1077,7 @@ Widget _buildDayChip(String label, int dayNumber) {
       });
     } : null,
     backgroundColor: Colors.grey[800],
-    selectedColor: const Color(0xFFE31D93),
+    selectedColor: const Color.fromARGB(255, 54, 208, 255),
     disabledColor: Colors.grey[900],
     labelStyle: TextStyle(
       color: isSelected 

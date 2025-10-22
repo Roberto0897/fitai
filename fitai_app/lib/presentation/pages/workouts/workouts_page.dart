@@ -416,104 +416,234 @@ class _WorkoutsPageState extends State<WorkoutsPage> with TickerProviderStateMix
   }
 
   Widget _buildRecommendedWorkouts() {
-    if (_isLoadingWorkouts) {
-      return const Center(
-        child: CircularProgressIndicator(color: AppColors.primary),
-      );
-    }
+  return FutureBuilder<Map<String, dynamic>>(
+    future: ApiService.getRecommendedWorkouts(), // ✅ CORRETO: Chama API
+    builder: (context, snapshot) {
+      // Loading
+      if (snapshot.connectionState == ConnectionState.waiting) {
+        return const Center(
+          child: CircularProgressIndicator(color: AppColors.primary),
+        );
+      }
 
-    final workouts = _getFilteredWorkouts(_getRecommendedWorkouts());
-    
-    if (workouts.isEmpty) {
-      return _buildEmptyState(
-        icon: Icons.psychology,
-        title: 'Nenhuma recomendação disponível',
-        subtitle: 'Marque treinos como recomendados no Django admin',
-      );
-    }
-
-    return Column(
-      children: [
-        Container(
-          margin: const EdgeInsets.fromLTRB(20, 0, 20, 16),
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                AppColors.primary.withValues(alpha: 0.1),
-                AppColors.primary.withValues(alpha: 0.05),
-              ],
-            ),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: AppColors.primary.withValues(alpha: 0.3),
-            ),
-          ),
-          child: Row(
+      // Erro
+      if (snapshot.hasError) {
+        return Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(
-                  Icons.psychology,
-                  color: AppColors.primary,
-                  size: 24,
-                ),
+              const Icon(Icons.error_outline, size: 64, color: Colors.red),
+              const SizedBox(height: 16),
+              Text(
+                'Erro ao carregar recomendações:\n${snapshot.error}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: AppColors.textSecondary),
               ),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Treinos FitAI',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.primary,
-                      ),
-                    ),
-                    SizedBox(height: 2),
-                    Text(
-                      'Treinos gerados pelo FitAI',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                  ],
-                ),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: () {
+                  setState(() {}); // Força rebuild
+                },
+                child: const Text('Tentar Novamente'),
               ),
             ],
           ),
-        ),
-        
-        Expanded(
-          child: RefreshIndicator(
-            onRefresh: _loadWorkoutsFromAPI,
-            color: AppColors.primary,
-            child: ListView.builder(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              itemCount: workouts.length,
-              itemBuilder: (context, index) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 16),
-                  child: WorkoutCard(
-                    workout: workouts[index],
-                    onTap: () => _openWorkoutDetail(workouts[index]),
-                    isRecommended: true,
+        );
+      }
+
+      // ✅ Extrair dados da resposta
+      final data = snapshot.data;
+      
+      if (data == null) {
+        return _buildEmptyRecommended('Nenhuma recomendação disponível');
+      }
+
+      // ✅ CRÍTICO: Usar a chave correta do backend
+      final recommendedList = data['recommended_workouts'] as List? ?? [];
+      
+      print('✅ ${recommendedList.length} treinos recomendados recebidos');
+
+      // Converter para WorkoutModel
+      final workouts = recommendedList.map((workout) {
+        return WorkoutModel(
+          id: workout['id'],
+          name: workout['name'] ?? 'Sem nome',
+          description: workout['description'] ?? '',
+          duration: workout['estimated_duration'] ?? 0,
+          exercises: workout['exercise_count'] ?? 0,
+          difficulty: _mapDifficulty(workout['difficulty_level']),
+          category: _mapCategory(workout['workout_type']),
+          calories: workout['calories_estimate'] ?? 0,
+          isRecommended: true, // ✅ Sempre true nesta aba
+        );
+      }).toList();
+
+      // Vazio
+      if (workouts.isEmpty) {
+        return _buildEmptyRecommended(
+          'Nenhum treino recomendado ainda.\n'
+          'Use o chatbot ou complete o onboarding para gerar treinos personalizados!'
+        );
+      }
+
+      // ✅ Sucesso - Mostrar treinos
+      return Column(
+        children: [
+          // Banner informativo
+          Container(
+            margin: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  AppColors.primary.withValues(alpha: 0.1),
+                  AppColors.primary.withValues(alpha: 0.05),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: AppColors.primary.withValues(alpha: 0.3),
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(12),
                   ),
-                );
-              },
+                  child: const Icon(
+                    Icons.psychology,
+                    color: AppColors.primary,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Treinos FitAI',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${workouts.length} treino(s) gerado(s) pela IA para você',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
-        ),
-      ],
-    );
-  }
+          
+          // Lista de treinos
+          Expanded(
+            child: RefreshIndicator(
+              onRefresh: () async {
+                setState(() {}); // Força rebuild do FutureBuilder
+              },
+              color: AppColors.primary,
+              child: ListView.builder(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                itemCount: workouts.length,
+                itemBuilder: (context, index) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: WorkoutCard(
+                      workout: workouts[index],
+                      onTap: () => _openWorkoutDetail(workouts[index]),
+                      isRecommended: true,
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        ],
+      );
+    },
+  );
+}
+
+// ============================================================
+// 🆕 WIDGET AUXILIAR: Estado vazio para recomendados
+// ============================================================
+
+Widget _buildEmptyRecommended(String message) {
+  return Center(
+    child: Padding(
+      padding: const EdgeInsets.all(32.0),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.psychology,
+              size: 64,
+              color: AppColors.primary,
+            ),
+          ),
+          const SizedBox(height: 24),
+          const Text(
+            'Nenhum treino recomendado',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: Colors.white,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 14,
+              color: AppColors.textSecondary,
+              height: 1.5,
+            ),
+          ),
+          const SizedBox(height: 24),
+          ElevatedButton.icon(
+            onPressed: () {
+              // Navegar para chatbot ou onboarding
+              AppRouter.goToChatBot(
+                initialContext: 'workout_generation',
+                initialMessage: 'Quero criar um treino personalizado',
+              );
+            },
+            icon: const Icon(Icons.auto_awesome),
+            label: const Text('Gerar Treino com IA'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.primary,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
 
   Widget _buildMyWorkouts() {
     return FutureBuilder<Map<String, dynamic>>(
