@@ -857,6 +857,12 @@ static Future<bool> syncProfileWithDjango(UserRegistrationData userData) async {
       'tipos_treino': userData.tiposTreino.join(','),
       'equipamentos': userData.equipamentos,
       'tempo_disponivel': userData.tempoDisponivel,
+
+      'training_frequency': userData.frequenciaSemanal,
+      'preferred_training_days': userData.diasPreferidos ?? [],
+      'preferred_workout_time': _mapHorarioToEnglish(userData.horarioPreferido),
+      'min_rest_days_between_workouts': userData.diasDescanso,
+      'physical_limitations': userData.limitacoesFisicas,
     };
 
     print('📤 Enviando dados para Django: $requestData');
@@ -919,6 +925,23 @@ static String _mapNivelAtividade(String nivel) {
   return mapeamento[nivel] ?? 'Moderado';
 }
 
+/// Mapear horário de treino para o formato inglês esperado pelo Django
+static String _mapHorarioToEnglish(String horario) {
+  final mapeamento = {
+    'manha': 'morning',
+    'manhã': 'morning',
+    'morning': 'morning',
+    'tarde': 'afternoon',
+    'afternoon': 'afternoon',
+    'noite': 'evening',
+    'evening': 'evening',
+    'flexivel': 'flexible',
+    'flexível': 'flexible',
+    'flexible': 'flexible',
+  };
+  
+  return mapeamento[horario.toLowerCase()] ?? 'flexible';
+}
 /// Atualizar perfil no Django
 static Future<bool> updateProfileInDjango(UserRegistrationData userData) async {
   try {

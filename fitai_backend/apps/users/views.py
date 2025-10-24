@@ -225,12 +225,88 @@ def register_user(request):
         if 'altura' in data:
             profile.height = float(data['altura'])
         
+        # ============================================================
+        #  NOVOS CAMPOS - TRAINING FREQUENCY
+        # ============================================================
+        
+        if 'training_frequency' in data:
+            freq = data['training_frequency']
+            print(f"✅ training_frequency recebido: {freq} (type: {type(freq)})")
+            try:
+                profile.training_frequency = int(freq)
+            except (ValueError, TypeError):
+                print(f"⚠️ Erro ao converter training_frequency, usando default 3")
+                profile.training_frequency = 3
+        else:
+            print(f"⚠️ training_frequency NÃO veio no request! Mantendo: {profile.training_frequency}")
+        
+        if 'preferred_training_days' in data:
+            days = data['preferred_training_days']
+            print(f"✅ preferred_training_days recebido: {days} (type: {type(days)})")
+            
+            if isinstance(days, list):
+                profile.preferred_training_days = days
+            elif isinstance(days, str):
+                try:
+                    import json
+                    profile.preferred_training_days = json.loads(days)
+                except json.JSONDecodeError:
+                    print(f"⚠️ Erro ao converter preferred_training_days")
+                    profile.preferred_training_days = []
+            else:
+                profile.preferred_training_days = []
+        else:
+            print(f"⚠️ preferred_training_days NÃO veio no request!")
+        
+        if 'min_rest_days_between_workouts' in data:
+            rest = data['min_rest_days_between_workouts']
+            print(f"✅ min_rest_days_between_workouts recebido: {rest}")
+            try:
+                profile.min_rest_days_between_workouts = int(rest)
+            except (ValueError, TypeError):
+                profile.min_rest_days_between_workouts = 1
+        
+        if 'preferred_workout_time' in data:
+            time = data['preferred_workout_time']
+            print(f"✅ preferred_workout_time recebido: {time}")
+            
+            # Validar se é um valor válido
+            valid_times = ['morning', 'afternoon', 'evening', 'flexible']
+            if time in valid_times:
+                profile.preferred_workout_time = time
+            else:
+                print(f"⚠️ Horário inválido '{time}', usando 'flexible'")
+                profile.preferred_workout_time = 'flexible'
+        
+        if 'physical_limitations' in data:
+            limitations = data['physical_limitations']
+            print(f"✅ physical_limitations recebido: {limitations[:50] if limitations else 'vazio'}...")
+            profile.physical_limitations = limitations
+        
+        # ============================================================
+        # SALVAR PERFIL
+        # ============================================================
+        
         profile.save()
+        
+        print(f"\n✅ PERFIL SALVO COM SUCESSO:")
+        print(f"   training_frequency: {profile.training_frequency}")
+        print(f"   preferred_training_days: {profile.preferred_training_days}")
+        print(f"   preferred_workout_time: {profile.preferred_workout_time}")
+        print(f"   min_rest_days: {profile.min_rest_days_between_workouts}\n")
         
         return Response({
             'success': True,
             'created': created,
+            'training_frequency': profile.training_frequency,
+            'preferred_training_days': profile.preferred_training_days,
+            'preferred_workout_time': profile.preferred_workout_time,
         })
+        
+     #   return Response({
+     #       'success': True,
+     #       'created': created,
+      #  })
         
     except Exception as e:
         print(f"❌ Erro: {e}")

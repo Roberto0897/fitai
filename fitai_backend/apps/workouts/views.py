@@ -2240,98 +2240,55 @@ def _build_weekly_plan_prompt(user_data):
     
     # PROMPT EM PORTUGUÊS
     return f'''
-Você é um personal trainer expert criando um PLANO SEMANAL PERSONALIZADO.
+Você é um personal trainer expert criando um PLANO SEMANAL.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📋 PERFIL DO ALUNO
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-👤 Nome: {nome}
-📊 {idade} anos, {sexo}
-⚖️ Peso: {peso_atual}kg → Meta: {peso_desejado}kg
-📏 Altura: {altura}cm
-📈 IMC: {bmi:.1f} ({bmi_status})
-💪 Nível: {nivel_texto}
+👤 PERFIL: {nome}, {idade} anos, {sexo}
+📊 Dados: {peso_atual}kg → {peso_desejado}kg | Altura: {altura}cm | IMC: {bmi:.1f}
+💪 Nível: {nivel_texto} | Meta: {metas}
+📅 Frequência: {frequencia}x/semana | Tempo: {tempo}min/treino
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🎯 OBJETIVOS E PREFERÊNCIAS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-✅ Metas: {metas}
-🎪 Focos: {areas_desejadas}
-🏋️ Tipos preferidos: {tipos_treino}
-🛠️ Equipamentos: {equipamentos}
-⏰ Tempo/treino: {tempo}
-⌚ Horário: {horario}
-📅 Frequência: {frequencia}x/semana
-📆 Dias: {dias_treino_texto}
-{f'⚠️ LIMITAÇÕES: {limitacoes}' if limitacoes else ''}
+⚠️ REGRA CRÍTICA: Crie EXATAMENTE {frequencia} treinos.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🎯 SUA MISSÃO
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Crie {frequencia} TREINOS ÚNICOS para a semana de {nome}.
-
-📋 ESPECIFICAÇÕES:
-• Cada treino: {ex_count} exercícios diferentes
-• Duração: ~{duration} minutos
-• Nível: {difficulty}
-• Distribuição: {focos_texto}
-
-✅ REGRAS OBRIGATÓRIAS:
-1. TUDO EM PORTUGUÊS BRASILEIRO
-2. Nomes específicos (ex: "Rosca Martelo", não "Rosca")
-3. Cada treino 100% ÚNICO e diferente
-4. Respeitar nível: {nivel_texto}
-5. Focar nas metas: {metas}
-6. Priorizar áreas: {areas_desejadas}
-7. Adaptar aos equipamentos: {equipamentos}
-8. Progressão lógica ao longo da semana
-9. {'EVITAR: ' + limitacoes if limitacoes else 'Sem restrições'}
-10. Considerar horário: {horario}
-
-⚠️ JSON VÁLIDO (sem markdown, sem comentários):
+✅ JSON (SEM markdown, SEM comentários):
 {{
   "weekly_plan": [
     {{
       "day_name": "Segunda",
-      "workout_name": "Nome Criativo e Motivacional",
-      "description": "Foco claro do treino (máx 120 chars, sem quebras)",
+      "workout_name": "Nome Motivacional",
+      "description": "Descrição curta (máx 80 chars)",
       "difficulty_level": "{difficulty}",
       "estimated_duration": {duration},
-      "target_muscle_groups": "grupos_trabalhados",
+      "target_muscle_groups": "grupos",
       "equipment_needed": "{equipamentos}",
       "workout_type": "strength",
       "calories_estimate": 250,
       "exercises": [
         {{
-          "name": "Nome Específico em Português",
-          "description": "Como executar (máx 150 chars)",
-          "muscle_group": "grupo_principal",
+          "name": "Nome do Exercício",
+          "description": "Como fazer (máx 100 chars)",
+          "muscle_group": "grupo",
           "difficulty_level": "{difficulty}",
-          "equipment_needed": "equipamento",
+          "equipment_needed": "equip",
           "duration_minutes": 5,
           "sets": 3,
-          "reps": "12-15",
+          "reps": "12",
           "rest_time": 60,
           "order_in_workout": 1,
-          "instructions": ["Passo 1", "Passo 2", "Passo 3"],
-          "tips": ["Dica 1", "Dica 2"]
+          "instructions": ["Passo 1", "Passo 2"],
+          "tips": ["Dica 1"]
         }}
       ]
     }}
   ]
 }}
 
-🎨 SEJA CRIATIVO:
-• Nomes motivacionais (ex: "Explosão de Peito - Segunda Poderosa")
-• Exercícios variados entre os dias
-• Progressão inteligente
-• Foco nas áreas desejadas: {areas_desejadas}
-• Considere que {nome} treina {horario.lower()}
+🎯 IMPORTANTE:
+- EXATAMENTE {frequencia} treinos
+- {ex_count} exercícios por treino
+- Descrições CURTAS (evitar texto longo)
+- JSON válido (fechar todas chaves)
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Agora crie o plano perfeito para {nome}! 🚀
+Distribuição: {focos_texto}
 '''
 
 
@@ -2516,7 +2473,7 @@ def generate_onboarding_workout(request):
         model = genai.GenerativeModel(model_name)
         
         generation_config = {
-            'max_output_tokens': 4000,
+            'max_output_tokens': 16384,
             'temperature': 0.7,  # ✅ Aumentar criatividade
             'response_mime_type': 'application/json',
         }
