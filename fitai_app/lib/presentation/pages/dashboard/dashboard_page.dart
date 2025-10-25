@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../../../providers/user_profile_provider.dart';
 import '../../../providers/dashboard_provider.dart';
 import '../../../service/api_service.dart';
+import '../workouts/workout_detail_page.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({Key? key}) : super(key: key);
@@ -616,69 +617,105 @@ Widget _buildTodayWorkoutCard(DashboardProvider provider) {
             child: ElevatedButton(
               onPressed: shouldRest || isOffSchedule
                   ? () {
-                      // Se é descanso ou fora do cronograma, ir para treinos disponíveis
                       AppRouter.goToWorkouts();
                     }
                   : hasRecommendation && workoutId != null
                       ? () async {
-                          // Lógica original para carregar treino
                           try {
-                            debugPrint('🔍 Carregando treino recomendado ID: $workoutId');
+                            debugPrint('🏁 Iniciando treino recomendado ID: $workoutId');
                             
+                            // ✅ PASSO 1: Carregar detalhes do treino
                             final response = await ApiService.getWorkoutDetail(workoutId);
                             final workoutDetails = response['workout'] ?? response;
+                            final exercisesList = response['exercises'] as List? ?? [];
                             
-                            if (workoutDetails['id'] == null) {
-                              throw Exception('ID do treino não encontrado');
+                            if (exercisesList.isEmpty) {
+                              throw Exception('Treino sem exercícios');
                             }
                             
-                            int exerciseCount = 0;
-                            if (response['exercises'] != null && response['exercises'] is List) {
-                              exerciseCount = (response['exercises'] as List).length;
-                            } else if (workoutDetails['exercises'] != null) {
-                              if (workoutDetails['exercises'] is List) {
-                                exerciseCount = (workoutDetails['exercises'] as List).length;
-                              } else if (workoutDetails['exercises'] is int) {
-                                exerciseCount = workoutDetails['exercises'];
-                              }
-                            } else if (response['total_exercises'] != null) {
-                              exerciseCount = response['total_exercises'];
+                            // ✅ PASSO 2: Converter exercícios para ExerciseModel
+                            final exercises = exercisesList.map((exerciseData) {
+                              final exercise = exerciseData is Map && exerciseData.containsKey('exercise')
+                                  ? exerciseData['exercise']
+                                  : exerciseData;
+                              
+                              return ExerciseModel(
+                                id: exercise['id'] ?? 0,
+                                name: exercise['name'] ?? 'Sem nome',
+                                description: exercise['description'] ?? '',
+                                muscleGroup: _mapMuscleGroup(exercise['muscle_group']),
+                                difficulty: _mapDifficulty(exercise['difficulty_level']),
+                                equipment: exercise['equipment_needed'] ?? 'Não especificado',
+                                series: exerciseData['sets'] != null
+                                    ? '${exerciseData['sets']} séries x ${exerciseData['reps'] ?? "?"} reps'
+                                    : '3 séries',
+                                reps: exerciseData['reps']?.toString(),
+                                restTime: exerciseData['rest_time']?.toString(),
+                                videoUrl: exercise['video_url'],
+                                imageUrl: exercise['image_url'],
+                              );
+                            }).toList();
+                            
+                            // ✅ PASSO 3: Mostrar loading
+                            if (mounted) {
+                              showDialog(
+                                context: context,
+                                barrierDismissible: false,
+                                builder: (context) => const Center(
+                                  child: CircularProgressIndicator(
+                                    color: Color(0xFF00BCD4),
+                                  ),
+                                ),
+                              );
                             }
                             
-                            final id = workoutDetails['id'] is int 
-                                ? workoutDetails['id'] 
-                                : int.tryParse(workoutDetails['id'].toString()) ?? 0;
+                            // ✅ PASSO 4: Iniciar sessão
+                            final sessionResponse = await ApiService.startWorkoutSession(workoutId);
+                            final sessionId = sessionResponse['session_id'];
                             
-                            final duration = workoutDetails['estimated_duration'] is int
-                                ? workoutDetails['estimated_duration']
-                                : int.tryParse(workoutDetails['estimated_duration']?.toString() ?? '0') ?? 0;
+                            debugPrint('✅ Sessão criada: $sessionId');
                             
-                            final calories = workoutDetails['calories_estimate'] is int
-                                ? workoutDetails['calories_estimate']
-                                : int.tryParse(workoutDetails['calories_estimate']?.toString() ?? '0') ?? 0;
+                            // Fechar loading
+                            if (mounted) Navigator.pop(context);
                             
-                            final workoutModel = WorkoutModel(
-                              id: id,
-                              name: workoutDetails['name'] ?? 'Treino sem nome',
-                              description: workoutDetails['description'] ?? '',
-                              duration: duration,
-                              exercises: exerciseCount,
-                              difficulty: workoutDetails['difficulty_level'] ?? 'Iniciante',
-                              category: workoutDetails['workout_type'] ?? 'Geral',
-                              calories: calories,
-                            );
+                            // ✅ PASSO 5: Navegar DIRETO para ExerciseExecution
+                            if (mounted) {
+                              AppRouter.goToExerciseExecution(
+                                exercise: exercises[0],
+                                totalExercises: exercises.length,
+                                currentExerciseIndex: 1,
+                                allExercises: exercises,
+                                initialWorkoutSeconds: 0,
+                                isFullWorkout: true,
+                                sessionId: sessionId,  // ✅ PASSA O SESSION ID
+                                workoutId: workoutId,
+                              );
+                            }
+                            
+                          } on ActiveSessionException catch (e) {
+                            // Fechar loading
+                            if (mounted) Navigator.pop(context);
+                            
+                            debugPrint('⚠️ Sessão ativa detectada: ${e.sessionId}');
                             
                             if (mounted) {
-                              AppRouter.goToWorkoutDetail(workout: workoutModel);
+                              _showActiveSessionDialog(
+                                sessionId: e.sessionId,
+                                workoutName: e.workoutName,
+                              );
                             }
+                            
                           } catch (e, stackTrace) {
-                            debugPrint('❌ Erro ao carregar treino: $e');
+                            // Fechar loading
+                            if (mounted) Navigator.pop(context);
+                            
+                            debugPrint('❌ Erro ao iniciar treino: $e');
                             debugPrint('Stack trace: $stackTrace');
                             
                             if (mounted) {
                               ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(
-                                  content: Text('Erro ao carregar treino: ${e.toString()}'),
+                                  content: Text('Erro ao iniciar treino: ${e.toString()}'),
                                   backgroundColor: Colors.red,
                                   duration: const Duration(seconds: 4),
                                 ),
@@ -1207,4 +1244,167 @@ Widget _buildInfoChip({required String icon, required String label}) {
       ),
     );
   }
+  // ✅ MÉTODO AUXILIAR 1: Mapear dificuldade
+String _mapDifficulty(String? difficulty) {
+  switch (difficulty?.toLowerCase()) {
+    case 'beginner':
+      return 'Iniciante';
+    case 'intermediate':
+      return 'Intermediário';
+    case 'advanced':
+      return 'Avançado';
+    default:
+      return 'Iniciante';
+  }
+}
+
+// ✅ MÉTODO AUXILIAR 2: Mapear grupo muscular
+String _mapMuscleGroup(String? group) {
+  switch (group?.toLowerCase()) {
+    case 'chest':
+      return 'Peito';
+    case 'back':
+      return 'Costas';
+    case 'legs':
+      return 'Pernas';
+    case 'shoulders':
+      return 'Ombros';
+    case 'arms':
+      return 'Braços';
+    case 'abs':
+    case 'core':
+      return 'Core';
+    case 'cardio':
+      return 'Cardio';
+    default:
+      return 'Geral';
+  }
+}
+
+// ✅ MÉTODO AUXILIAR 3: Dialog de sessão ativa
+void _showActiveSessionDialog({
+  required int sessionId,
+  required String workoutName,
+}) {
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => AlertDialog(
+      backgroundColor: const Color(0xFF2A2A2A),
+      title: Row(
+        children: [
+          const Icon(
+            Icons.warning_amber,
+            color: Colors.orange,
+            size: 28,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Treino em Andamento',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+              ),
+            ),
+          ),
+        ],
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Você tem um treino ativo:',
+            style: const TextStyle(
+              color: Colors.white70,
+              fontSize: 14,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFF00BCD4).withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: const Color(0xFF00BCD4).withOpacity(0.3),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  workoutName,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'ID da Sessão: $sessionId',
+                  style: const TextStyle(
+                    color: Colors.white54,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Voltar'),
+        ),
+        TextButton(
+          onPressed: () async {
+            Navigator.pop(context);
+            
+            try {
+              showDialog(
+                context: context,
+                barrierDismissible: false,
+                builder: (context) => const Center(
+                  child: CircularProgressIndicator(
+                    color: Color(0xFF00BCD4),
+                  ),
+                ),
+              );
+              
+              await ApiService.cancelActiveSession(sessionId);
+              
+              if (mounted) {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('✅ Sessão cancelada'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              }
+            } catch (e) {
+              if (mounted) {
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Erro ao cancelar: $e'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            }
+          },
+          child: const Text(
+            'Cancelar Sessão',
+            style: TextStyle(color: Colors.red),
+          ),
+        ),
+      ],
+    ),
+  );
+}
 }

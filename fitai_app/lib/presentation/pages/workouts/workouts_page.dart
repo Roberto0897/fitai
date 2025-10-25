@@ -560,10 +560,11 @@ class _WorkoutsPageState extends State<WorkoutsPage> with TickerProviderStateMix
                 itemBuilder: (context, index) {
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 16),
-                    child: WorkoutCard(
+                    child: _MyWorkoutCard(
                       workout: workouts[index],
                       onTap: () => _openWorkoutDetail(workouts[index]),
-                      isRecommended: true,
+                      onEdit: () => _editWorkout(workouts[index]),
+                      onDelete: () => _deleteWorkout(workouts[index]),
                     ),
                   );
                 },
