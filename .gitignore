@@ -34,7 +34,7 @@ Thumbs.db
 # Logs and reports
 logs/
 *.log
-reports/
+/reports/
 
 # Cache
 .cache/

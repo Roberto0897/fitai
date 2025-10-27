@@ -719,13 +719,20 @@ Seja específico, honesto e construtivo baseado nos dados fornecidos."""
     
 
     def generate_daily_recommendation(self, user_profile: UserProfile, 
-                            workout_history: List[Dict] = None) -> Optional[Dict]:
+                        workout_history: List[Dict] = None) -> Optional[Dict]:
         """
         🔥 AJUSTADO: Verifica treino recomendado ANTES de gerar novo
         Evita recomendações conflitantes
         """
         
-        # 🎯 PASSO 1: Verificar se há treino recomendado recente (últimas 24h)
+        # ✅ ADICIONAR ESTAS 4 LINHAS NO INÍCIO:
+        cache_key = f"daily_rec_{user_profile.user.id}_{datetime.now().date()}"
+        cached = cache.get(cache_key)
+        if cached:
+            return cached
+        # ✅ FIM DA ADIÇÃO
+        
+        # Verifica se há treino recomendado recente (últimas 24h)
         from django.utils import timezone
         from datetime import timedelta
         from apps.workouts.models import Workout
@@ -754,7 +761,8 @@ Seja específico, honesto e construtivo baseado nos dados fornecidos."""
             # 🔥 CORRIGIDO: Calcular exercise_count dinamicamente
             exercise_count = recent_recommended.workout_exercises.count()
             
-            return {
+            # ✅ CRIAR VARIÁVEL result:
+            result = {
                 'recommendation_type': 'workout',
                 'title': f'Seu Treino: {recent_recommended.name}',
                 'message': f'{user_profile.user.first_name or "Você"}, treino personalizado pronto!',
@@ -775,17 +783,25 @@ Seja específico, honesto e construtivo baseado nos dados fornecidos."""
                     'personalization_factors': [
                         f'workout: {recent_recommended.name}',
                         f'created: {recent_recommended.created_at.strftime("%d/%m %H:%M")}',
-                        f'exercises: {exercise_count}',  # 🔥 Agora é variável, não atributo
+                        f'exercises: {exercise_count}',
                         f'duration: {recent_recommended.estimated_duration or 30}min'
                     ]
                 }
             }
+            
+            # ✅ ADICIONAR ESTAS 2 LINHAS:
+            cache.set(cache_key, result, 3600)  # Cache por 1 hora
+            return result
+            # ✅ FIM DA ADIÇÃO (remova o return que estava antes)
         
         # 🤖 PASSO 2: Se não há treino recomendado, gerar nova recomendação
         
         if not self.is_available or cache.get("gemini_temp_disabled"):
             logger.info("IA indisponível, usando fallback baseado em regras")
-            return self._generate_rule_based_recommendation(user_profile, workout_history)
+            # ✅ MODIFICAR ESTA LINHA:
+            fallback = self._generate_rule_based_recommendation(user_profile, workout_history)
+            cache.set(cache_key, fallback, 3600)
+            return fallback
         
         try:
             # Coletar contexto do usuário
@@ -836,15 +852,23 @@ Seja específico, honesto e construtivo baseado nos dados fornecidos."""
                         )
                     }
                     
+                    # ✅ ADICIONAR ESTAS 2 LINHAS:
+                    cache.set(cache_key, validated_recommendation, 3600)
                     return validated_recommendation
             
             # Fallback para regras se IA falhar
             logger.warning("Gemini retornou resposta inválida, usando fallback")
-            return self._generate_rule_based_recommendation(user_profile, workout_history)
+            # ✅ MODIFICAR ESTA LINHA:
+            fallback = self._generate_rule_based_recommendation(user_profile, workout_history)
+            cache.set(cache_key, fallback, 3600)
+            return fallback
             
         except Exception as e:
             logger.error(f"Error generating daily recommendation: {e}")
-            return self._generate_rule_based_recommendation(user_profile, workout_history)
+            # ✅ MODIFICAR ESTA LINHA:
+            fallback = self._generate_rule_based_recommendation(user_profile, workout_history)
+            cache.set(cache_key, fallback, 3600)
+            return fallback
 
 
     def _extract_focus_from_workout(self, workout):

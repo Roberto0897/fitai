@@ -14,6 +14,10 @@ import '../../presentation/pages/profile/profile_page.dart';
 import '../../service/user_service.dart';
 import 'dart:async'; // Para Timer 
 import 'package:flutter/foundation.dart'; // Para kDebugMode
+import '../../providers/user_profile_provider.dart';
+import '../../providers/dashboard_provider.dart';
+import '../../service/api_service.dart';
+import 'package:provider/provider.dart';
 
 /// Rotas da aplicação FITAI
 class AppRoutes {
@@ -253,22 +257,38 @@ class AppRouter {
 
   // 🔥 LOGOUT CORRIGIDO - Agora faz logout real
   static Future<void> logout() async {
+  try {
+    debugPrint('🚀 ROUTER: Iniciando logout...');
+    
+    // 1. Limpar cache de token da API
+    ApiService.clearTokenCache();
+    debugPrint('🗑️ Token cache limpo');
+    
+    // 2. Limpar providers
     try {
-      debugPrint('🚀 ROUTER: Iniciando processo de logout...');
-      
-      // 1. Fazer logout real usando UserService
-      await UserService.logout();
-      
-      // 2. Navegar para login (será automático pelo AuthNotifier, mas garantimos)
-      _router.go(AppRoutes.login);
-      
-      debugPrint('✅ Logout completo realizado');
+      final context = _router.routerDelegate.navigatorKey.currentContext;
+      if (context != null && context.mounted) {
+        context.read<UserProfileProvider>().clearProfile();
+        context.read<DashboardProvider>().clear();
+        debugPrint('🧹 Providers limpos');
+      }
     } catch (e) {
-      debugPrint('❌ Erro durante logout: $e');
-      // Fallback: ao menos navegar para login
-      _router.go(AppRoutes.login);
+      debugPrint('⚠️ Providers não disponíveis: $e');
     }
+    
+    // 3. Logout do Firebase
+    await UserService.logout();
+    
+    // 4. Navegar para login
+    _router.go(AppRoutes.login);
+    
+    debugPrint('✅ Logout completo');
+  } catch (e) {
+    debugPrint('❌ Erro no logout: $e');
+    ApiService.clearTokenCache();
+    _router.go(AppRoutes.login);
   }
+}
   
   static void goToWorkoutDetail({required WorkoutModel workout}) {
     try {

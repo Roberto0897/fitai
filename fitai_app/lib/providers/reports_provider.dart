@@ -39,13 +39,18 @@ class ReportsProvider extends ChangeNotifier {
   }
 
   List<WorkoutHistoryModel> get thisWeekWorkouts {
-    final now = DateTime.now();
-    final startOfWeek = now.subtract(Duration(days: now.weekday - 1));
-    
-    return _workoutHistory.where((workout) {
-      return workout.date.isAfter(startOfWeek) && workout.date.isBefore(now);
-    }).toList();
-  }
+  final now = DateTime.now();
+  // Normalizar para início do dia (00:00:00)
+  final today = DateTime(now.year, now.month, now.day);
+  final startOfWeek = today.subtract(Duration(days: now.weekday - 1));
+  final endOfWeek = today.add(const Duration(days: 1)); // Até amanhã 00:00
+  
+  return _workoutHistory.where((workout) {
+    final workoutDay = DateTime(workout.date.year, workout.date.month, workout.date.day);
+    return workoutDay.isAtSameMomentAs(startOfWeek) || 
+           (workoutDay.isAfter(startOfWeek) && workoutDay.isBefore(endOfWeek));
+  }).toList();
+}
 
   Map<int, int> get weeklyFrequency {
     final frequency = <int, int>{};

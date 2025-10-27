@@ -1438,99 +1438,107 @@ def _generate_specific_recs(workout_count, profile):
 @permission_classes([IsAuthenticated])
 def get_daily_ai_recommendation(request):
     """
-    GET/POST /api/v1/ai/daily-recommendation/
+    GET/POST /api/v1/recommendations/ai/daily-recommendation/
     
-    Retorna recomendação diária personalizada gerada pela IA
-    
-    Body (opcional):
-    {
-        "recent_workouts": [
-            {
-                "date": "2025-10-11T10:00:00Z",
-                "muscle_groups": ["chest", "arms"],
-                "completed": true
-            }
-        ]
-    }
+    🔥 NOVO: Retorna apenas MENSAGEM MOTIVACIONAL
+    Sincronizada com a recomendação do smart-recommendation
     """
     try:
         user = request.user
         user_profile = user.userprofile
         
-        # Verificar cache (recomendação válida por 6 horas)
-        cache_key = f"daily_recommendation_{user.id}_{datetime.now().strftime('%Y%m%d')}"
-        cached_recommendation = cache.get(cache_key)
+        # Cache de motivação (separado da recomendação principal)
+        cache_key = f"daily_motivation_{user.id}_{datetime.now().date()}"
+        cached_motivation = cache.get(cache_key)
         
-        # Se request é GET e tem cache, retornar cache
-        if request.method == 'GET' and cached_recommendation:
-            logger.info(f"Returning cached daily recommendation for user {user.id}")
+        if request.method == 'GET' and cached_motivation:
+            logger.info(f"Returning cached motivation for user {user.id}")
             return Response({
                 'success': True,
-                'recommendation': cached_recommendation,
+                'motivation': cached_motivation,
                 'cached': True
             })
         
-        # Pegar histórico do body se fornecido
-        recent_workouts = None
-        if request.method == 'POST' and request.data:
-            recent_workouts = request.data.get('recent_workouts')
+        # ✅ PEGAR A RECOMENDAÇÃO PRINCIPAL (do smart-recommendation)
+        smart_cache_key = f"daily_rec_{user.id}_{datetime.now().date()}"
+        main_recommendation = cache.get(smart_cache_key)
         
-        # Gerar nova recomendação
+        # Definir contexto baseado na recomendação principal
+        if main_recommendation:
+            rec_type = main_recommendation.get('recommendation_type')
+            
+            if rec_type == 'rest':
+                context = "O usuário deve descansar hoje. Motive sobre a importância da recuperação."
+                emoji = "😴"
+                title = "💤 Descanso Merece Elogios"
+            elif rec_type == 'workout':
+                workout_name = main_recommendation.get('workout_name', 'treino')
+                context = f"O usuário tem '{workout_name}' hoje. Motive-o a dar o melhor."
+                emoji = "💪"
+                title = "🔥 Você Está Pronto!"
+            else:
+                context = "Motive o usuário a manter consistência."
+                emoji = "⭐"
+                title = "✨ Continue Brilhando"
+        else:
+            context = "Motive o usuário em sua jornada fitness."
+            emoji = "🚀"
+            title = "🎯 Foco Total"
+        
+        # Gerar mensagem motivacional
         ai_service = AIService()
         
-        if not ai_service.is_available:
-            return Response({
-                'success': False,
-                'message': 'Serviço de IA temporariamente indisponível',
-                'fallback_recommendation': {
-                    'recommendation_type': 'workout',
-                    'title': 'Continue firme!',
-                    'message': f'Olá {user.first_name}! Hoje é um ótimo dia para treinar.',
-                    'focus_area': 'full_body',
-                    'intensity': 'moderate',
-                    'emoji': '💪'
-                }
-            }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
-        
-        recommendation = ai_service.generate_daily_recommendation(
-            user_profile=user_profile,
-            workout_history=recent_workouts
-        )
-        
-        if recommendation:
-            # Cachear por 6 horas
-            cache.set(cache_key, recommendation, 21600)
-            
-            logger.info(f"Generated daily recommendation for user {user.id}: {recommendation['recommendation_type']}")
-            
-            return Response({
-                'success': True,
-                'recommendation': recommendation,
-                'cached': False
-            })
+        if ai_service.is_available:
+            motivational_message = ai_service.generate_motivational_content(
+                user_profile=user_profile,
+                context=context
+            )
         else:
-            # Fallback se IA falhar
-            return Response({
-                'success': False,
-                'message': 'Não foi possível gerar recomendação personalizada',
-                'fallback_recommendation': {
-                    'recommendation_type': 'motivation',
-                    'title': 'Você consegue!',
-                    'message': f'Olá {user.first_name}! Continue seu progresso hoje.',
-                    'focus_area': 'full_body',
-                    'intensity': 'moderate',
-                    'emoji': '🌟',
-                    'reasoning': 'Mensagem motivacional padrão'
-                }
-            }, status=status.HTTP_200_OK)
+            motivational_message = None
+        
+        # Fallback de mensagens
+        if not motivational_message:
+            name = user_profile.user.first_name or "Campeão"
             
-    except Exception as e:
-        logger.error(f"Error generating daily recommendation: {e}", exc_info=True)
+            if main_recommendation and main_recommendation.get('recommendation_type') == 'rest':
+                motivational_message = f"{name}, descanso é crescimento! Seu corpo agradece. 💪"
+            else:
+                motivational_message = f"{name}, você está a um treino de se superar! Vamos nessa! 🔥"
+        
+        # Estrutura da resposta
+        motivation_data = {
+            'type': 'motivation',
+            'title': title,
+            'message': motivational_message,
+            'emoji': emoji,
+            'related_to': main_recommendation.get('recommendation_type') if main_recommendation else 'general',
+            'personalized': True
+        }
+        
+        # Cache por 4 horas
+        cache.set(cache_key, motivation_data, 14400)
+        
+        logger.info(f"Generated motivation for user {user.id}")
+        
         return Response({
-            'success': False,
-            'error': 'Erro ao gerar recomendação',
-            'details': str(e)
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            'success': True,
+            'motivation': motivation_data,
+            'cached': False
+        })
+        
+    except Exception as e:
+        logger.error(f"Error generating motivation: {e}", exc_info=True)
+        return Response({
+            'success': True,  # Não falhar
+            'motivation': {
+                'type': 'motivation',
+                'title': '💪 Continue Firme',
+                'message': 'Cada dia é uma oportunidade de ser melhor!',
+                'emoji': '⭐',
+                'personalized': False
+            },
+            'cached': False
+        }, status=status.HTTP_200_OK)
 
 
 @api_view(['POST'])

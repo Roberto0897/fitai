@@ -15,6 +15,7 @@ from django.conf import settings
 import re
 import json
 from datetime import datetime, timedelta
+from .video_library import find_video_for_exercise 
 
 @api_view(['GET'])
 def test_workouts_api(request):
@@ -2480,9 +2481,52 @@ def generate_onboarding_workout(request):
         
         response = model.generate_content(ai_prompt, generation_config=generation_config)
         plan_data = _extract_json_from_ai_response(response.text)
-        
+
         if not plan_data:
             raise ValueError("JSON inválido retornado pela IA")
+
+        # ============================================================
+        # ✅ VALIDAÇÃO: Corrigir se IA retornou estrutura errada
+        # ============================================================
+
+        if generate_plan:  # Deveria gerar MÚLTIPLOS treinos
+            
+            if 'weekly_plan' not in plan_data:
+                print(f'⚠️ IA retornou treino único ao invés de plano!')
+                
+                # Corrigir: transformar em array de treinos
+                if 'exercises' in plan_data:
+                    print(f'🔧 Convertendo em plano de {frequencia} treinos...')
+                    
+                    dias = ['Segunda-feira', 'Quarta-feira', 'Sexta-feira', 'Terça-feira', 'Quinta-feira', 'Sábado-feira', 'Domingo']
+                    workouts = []
+                    
+                    for i in range(frequencia):
+                        workout = plan_data.copy()
+                        workout['day_name'] = dias[i % len(dias)]
+                        
+                        base_name = plan_data.get('workout_name', 'Treino Personalizado')
+                        workout['workout_name'] = f"{base_name} - Dia {i+1}"
+                        
+                        workouts.append(workout)
+                    
+                    plan_data = {'weekly_plan': workouts}
+                    print(f'✅ Plano corrigido: {len(workouts)} treinos')
+            
+            # Validar quantidade
+            if 'weekly_plan' in plan_data:
+                workouts = plan_data['weekly_plan']
+                
+                if len(workouts) != frequencia:
+                    print(f'⚠️ IA gerou {len(workouts)}, ajustando para {frequencia}...')
+                    
+                    if len(workouts) < frequencia:
+                        while len(workouts) < frequencia:
+                            workouts.append(workouts[0].copy())
+                    else:
+                        workouts = workouts[:frequencia]
+                    
+                    plan_data['weekly_plan'] = workouts
         
         # ✅ CRIAR TREINOS
         if generate_plan and 'weekly_plan' in plan_data:
@@ -2565,22 +2609,40 @@ def _create_ai_workout(user, workout_data, user_profile, is_part_of_plan=False, 
     
     # Adicionar exercícios
     exercises_data = workout_data.get('exercises', [])
-    
+
     for idx, ex_data in enumerate(exercises_data, start=1):
+        exercise_name = ex_data.get('name', f'Exercício {idx}')
+        muscle_group = ex_data.get('muscle_group', 'full_body')
+        
+        # Buscar ou criar exercício
         exercise, created = Exercise.objects.get_or_create(
-            name=ex_data.get('name', f'Exercício {idx}'),
+            name=exercise_name,
             defaults={
                 'description': ex_data.get('description', ''),
-                'muscle_group': ex_data.get('muscle_group', 'full_body'),
+                'muscle_group': muscle_group,
                 'difficulty_level': ex_data.get('difficulty_level', 'beginner'),
                 'equipment_needed': ex_data.get('equipment_needed', 'bodyweight'),
                 'duration_minutes': ex_data.get('duration_minutes', 5),
                 'calories_per_minute': 5.0,
                 'instructions': ex_data.get('instructions', []),
-                'video_url': '',
+                'video_url': '',  # Será preenchido abaixo
             }
         )
         
+        # ✅ NOVO: SE É NOVO OU NÃO TEM VÍDEO, BUSCAR NA BIBLIOTECA
+        if created or not exercise.video_url:
+            video_url = find_video_for_exercise(exercise_name, muscle_group)
+            
+            if video_url:
+                exercise.video_url = video_url
+                exercise.save()
+                print(f"   🎥 Vídeo adicionado: {exercise_name}")
+            else:
+                print(f"   ⚠️ Sem vídeo: {exercise_name}")
+        else:
+            print(f"   ✅ Exercício existente (já tem vídeo): {exercise_name}")
+        
+        # Criar WorkoutExercise
         WorkoutExercise.objects.create(
             workout=workout,
             exercise=exercise,
@@ -2591,125 +2653,69 @@ def _create_ai_workout(user, workout_data, user_profile, is_part_of_plan=False, 
             order_in_workout=ex_data.get('order_in_workout', idx),
             notes='\n'.join(ex_data.get('tips', [])),
         )
-    
+        
     return workout
 
 def _extract_json_from_ai_response(text):
-    """Extrai e limpa JSON - VERSÃO ROBUSTA"""
+    """Extrai JSON - VERSÃO ROBUSTA"""
     import re
     import json
     
     print(f'📝 Processando {len(text)} caracteres...')
     
-    # ============================================================
-    # 1. EXTRAIR JSON
-    # ============================================================
-    json_match = re.search(r'```(?:json)?\s*(.*?)\s*```', text, re.DOTALL)
-    if json_match:
-        json_text = json_match.group(1)
-        print('✅ JSON extraído de markdown')
-    else:
-        json_match = re.search(r'\{.*\}', text, re.DOTALL)
+    # Extrair primeiro { até seu } correspondente
+    start_idx = text.find('{')
+    if start_idx == -1:
+        json_match = re.search(r'```(?:json)?\s*(.*?)\s*```', text, re.DOTALL)
         if json_match:
-            json_text = json_match.group(0)
-            print('✅ JSON extraído diretamente')
+            json_text = json_match.group(1)
         else:
             print('❌ JSON não encontrado')
             return None
+    else:
+        brace_count = 0
+        end_idx = start_idx
+        
+        for i in range(start_idx, len(text)):
+            if text[i] == '{':
+                brace_count += 1
+            elif text[i] == '}':
+                brace_count -= 1
+                if brace_count == 0:
+                    end_idx = i + 1
+                    break
+        
+        json_text = text[start_idx:end_idx]
+        print(f'✅ JSON extraído ({len(json_text)} chars)')
     
-    # ============================================================
-    # 2. LIMPEZA AGRESSIVA
-    # ============================================================
-    
-    # Remove caracteres de controle
+    # Limpeza
     json_text = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', json_text)
-    
-    # Remove comentários
     json_text = re.sub(r'//.*?\n', '\n', json_text)
-    json_text = re.sub(r'/\*.*?\*/', '', json_text, flags=re.DOTALL)
     
-    # Remove quebras de linha DENTRO de strings (CRÍTICO!)
-    def remove_newlines_in_strings(match):
-        string_content = match.group(1)
-        # Remove \n e \r
-        cleaned = string_content.replace('\n', ' ').replace('\r', ' ')
-        # Remove espaços múltiplos
-        cleaned = re.sub(r'\s+', ' ', cleaned)
-        # Remove aspas internas (causa erro)
-        cleaned = cleaned.replace('"', '')
-        return f'"{cleaned.strip()}"'
-    
-    # Aplicar limpeza em todas as strings
-    json_text = re.sub(r'"((?:[^"\\]|\\.)*)?"', remove_newlines_in_strings, json_text)
-    
-    # Truncar strings muito longas
-    def truncate_long_strings(match):
+    def clean_string(match):
         content = match.group(1)
-        if len(content) > 300:
-            return f'"{content[:297]}..."'
-        return match.group(0)
+        content = content.replace('\n', ' ').replace('\r', ' ').replace('"', '')
+        content = re.sub(r'\s+', ' ', content).strip()
+        if len(content) > 250:
+            content = content[:247] + '...'
+        return f'"{content}"'
     
-    json_text = re.sub(r'"([^"]{300,})"', truncate_long_strings, json_text)
-    
-    # Remove trailing commas
+    json_text = re.sub(r'"((?:[^"\\]|\\.)*)"', clean_string, json_text)
     json_text = re.sub(r',(\s*[}\]])', r'\1', json_text)
     
-    # ============================================================
-    # 3. PARSEAR JSON
-    # ============================================================
     try:
         data = json.loads(json_text)
-        print('✅ JSON parseado com sucesso!')
+        print('✅ JSON parseado!')
         
-        # Validar estrutura
-        if 'weekly_plan' in data:
-            if isinstance(data['weekly_plan'], list) and len(data['weekly_plan']) > 0:
-                print(f'✅ Plano com {len(data["weekly_plan"])} treinos')
-                return data
-            else:
-                print('❌ weekly_plan inválido')
-                return None
-        elif 'exercises' in data:
-            if isinstance(data['exercises'], list) and len(data['exercises']) > 0:
-                print(f'✅ Treino com {len(data["exercises"])} exercícios')
-                return data
-            else:
-                print('❌ exercises inválido')
-                return None
-        else:
-            print('⚠️ Estrutura desconhecida, mas JSON válido')
-            return data
+        if 'weekly_plan' in data and isinstance(data['weekly_plan'], list):
+            print(f'✅ Plano: {len(data["weekly_plan"])} treinos')
+        elif 'exercises' in data and isinstance(data['exercises'], list):
+            print(f'✅ Treino único: {len(data["exercises"])} exercícios')
+        
+        return data
             
     except json.JSONDecodeError as e:
-        print(f'❌ ERRO JSON: linha {e.lineno}, coluna {e.colno}')
-        print(f'   Mensagem: {e.msg}')
-        
-        # Mostrar contexto do erro
-        lines = json_text.split('\n')
-        if e.lineno <= len(lines):
-            start = max(0, e.lineno - 2)
-            end = min(len(lines), e.lineno + 1)
-            print('📍 Contexto:')
-            for i in range(start, end):
-                prefix = '>>> ' if i == e.lineno - 1 else '    '
-                print(f'{prefix}L{i+1}: {lines[i][:100]}')
-        
-        # Salvar para análise
-        try:
-            import tempfile, os
-            error_file = os.path.join(
-                tempfile.gettempdir(), 
-                f'gemini_error_{int(timezone.now().timestamp())}.txt'
-            )
-            with open(error_file, 'w', encoding='utf-8') as f:
-                f.write('=== RESPOSTA ORIGINAL ===\n\n')
-                f.write(text)
-                f.write('\n\n=== JSON LIMPO ===\n\n')
-                f.write(json_text)
-            print(f'💾 Erro salvo em: {error_file}')
-        except Exception as save_err:
-            print(f'⚠️ Não salvou arquivo: {save_err}')
-        
+        print(f'❌ ERRO JSON: {e.msg}')
         return None
 
 
