@@ -863,28 +863,40 @@ def generate_workout_from_conversation(request):
     """
     🤖 Gera plano de treino SEMANAL baseado na conversa do chatbot
     
-    ✅ CORREÇÕES:
-    - Treino PRIVADO do usuário (is_personalized=True, created_by_user=user)
-    - Treino RECOMENDADO (is_recommended=True) para aparecer na lista certa
-    - Apenas o dono pode ver
+    ✅ CORRIGIDO:
+    - Validação adequada de entrada
+    - Estrutura dinâmica baseada no focus
+    - Lógica de prioridades clara
+    - Geração adaptativa de dias
     """
     try:
         from apps.exercises.models import Exercise
         from apps.workouts.models import Workout, WorkoutExercise
         from django.utils import timezone
         
-        profile = UserProfile.objects.get(user=request.user)
+        # ============================================================
+        # 1️⃣ BUSCAR PERFIL
+        # ============================================================
+        try:
+            profile = UserProfile.objects.get(user=request.user)
+        except UserProfile.DoesNotExist:
+            return Response({
+                'error': 'Perfil não encontrado',
+                'message': 'Complete seu perfil antes de gerar treinos'
+            }, status=status.HTTP_404_NOT_FOUND)
         
-        # Parâmetros da requisição (podem vir da conversa)
-        conversation_id = request.data.get('conversation_id')
+        # ============================================================
+        # 2️⃣ EXTRAIR E VALIDAR DADOS
+        # ============================================================
+        plan_info = request.data.get('plan_info')
         user_preferences = request.data.get('user_preferences', {})
+        conversation_id = request.data.get('conversation_id')
         
-        # Configurações padrão baseadas no perfil
-        days_per_week = user_preferences.get('days_per_week', 5)
-        focus = user_preferences.get('focus', 'full_body')
-        difficulty = profile.activity_level or 'beginner'
+        # Validar plan_info
+        if plan_info and not isinstance(plan_info, dict):
+            plan_info = None
         
-        # Mapear atividade para dificuldade
+        # Mapear activity_level → difficulty
         difficulty_mapping = {
             'sedentary': 'beginner',
             'light': 'beginner',
@@ -892,27 +904,66 @@ def generate_workout_from_conversation(request):
             'active': 'intermediate',
             'very_active': 'advanced'
         }
-        difficulty = difficulty_mapping.get(difficulty, 'beginner')
+        profile_difficulty = difficulty_mapping.get(profile.activity_level, 'beginner')
+        
+        # ============================================================
+        # 3️⃣ DEFINIR PARÂMETROS COM PRIORIDADE CLARA
+        # ============================================================
+        # Prioridade: plan_info > user_preferences > profile defaults
+        days_per_week = (
+            (plan_info and plan_info.get('days_per_week')) or
+            user_preferences.get('days_per_week') or
+            profile.training_frequency or
+            3
+        )
+        
+        focus = (
+            (plan_info and plan_info.get('focus')) or
+            user_preferences.get('focus') or
+            'full_body'
+        )
+        
+        difficulty = (
+            (plan_info and plan_info.get('difficulty')) or
+            user_preferences.get('difficulty') or
+            profile_difficulty
+        )
+        
+        # Validar valores
+        valid_focus = ['full_body', 'upper', 'lower', 'cardio', 'strength', 'legs', 'arms', 'chest', 'back']
+        if focus not in valid_focus:
+            focus = 'full_body'
+        
+        days_per_week = max(1, min(days_per_week, 7))  # Entre 1 e 7
+        
+        source = 'chat_detection' if plan_info else ('user_preferences' if user_preferences else 'profile_defaults')
         
         print(f'🤖 Gerando plano SEMANAL PRIVADO para {request.user.email}')
+        print(f'   Fonte: {source}')
         print(f'   Dias: {days_per_week}, Foco: {focus}, Nível: {difficulty}')
         
         # ============================================================
-        # 🔥 BUSCAR EXERCÍCIOS DISPONÍVEIS
+        # 4️⃣ BUSCAR EXERCÍCIOS (MELHORADO)
         # ============================================================
+        exercises_query = Exercise.objects.filter(is_active=True)
         
-        exercises_query = Exercise.objects.all()
-        
-        # Filtrar por foco
-        focus_mapping = {
+        # Mapeamento inteligente de foco
+        focus_to_muscles = {
             'upper': ['chest', 'back', 'shoulders', 'arms'],
             'lower': ['legs', 'glutes'],
+            'legs': ['legs', 'glutes'],
+            'arms': ['arms'],
+            'chest': ['chest'],
+            'back': ['back'],
             'cardio': ['cardio'],
+            'strength': ['chest', 'back', 'legs', 'shoulders'],
             'full_body': None,  # Todos
         }
         
-        if focus in focus_mapping and focus_mapping[focus]:
-            exercises_query = exercises_query.filter(muscle_group__in=focus_mapping[focus])
+        target_muscles = focus_to_muscles.get(focus)
+        
+        if target_muscles:
+            exercises_query = exercises_query.filter(muscle_group__in=target_muscles)
         
         # Filtrar por dificuldade
         if difficulty == 'beginner':
@@ -925,116 +976,67 @@ def generate_workout_from_conversation(request):
         if not all_exercises:
             return Response({
                 'error': 'Não há exercícios disponíveis',
+                'suggestion': 'Tente um foco diferente ou ajuste a dificuldade'
             }, status=status.HTTP_400_BAD_REQUEST)
         
         # ============================================================
-        # 🔥 ESTRUTURAR PLANO SEMANAL
+        # 5️⃣ ESTRUTURA DINÂMICA BASEADA NO FOCUS
         # ============================================================
         
-        weekly_structure = {
-            'Dia 1': {
-                'description': 'Peito e Tríceps',
-                'muscle_groups': ['chest', 'arms'],
-                'exercises_count': 5
-            },
-            'Dia 2': {
-                'description': 'Costas e Bíceps',
-                'muscle_groups': ['back', 'arms'],
-                'exercises_count': 5
-            },
-            'Dia 3': {
-                'description': 'Pernas (ênfase em quadríceps)',
-                'muscle_groups': ['legs'],
-                'exercises_count': 5
-            },
-            'Dia 4': {
-                'description': 'Descanso Ativo (cardio leve, alongamento)',
-                'muscle_groups': ['cardio', 'flexibility'],
-                'exercises_count': 3
-            },
-            'Dia 5': {
-                'description': 'Ombros e Trapézio',
-                'muscle_groups': ['shoulders', 'back'],
-                'exercises_count': 5
-            },
-            'Dia 6': {
-                'description': 'Pernas (ênfase em posteriores e glúteos)',
-                'muscle_groups': ['legs', 'glutes'],
-                'exercises_count': 5
-            },
-            'Dia 7': {
-                'description': 'Descanso',
-                'muscle_groups': [],
-                'exercises_count': 0
-            },
-        }
-        
-        # Selecionar apenas dias necessários
-        days_to_generate = list(weekly_structure.keys())[:days_per_week]
+        # Gerar estrutura adaptativa
+        weekly_structure = generate_adaptive_structure(
+            focus=focus,
+            days_per_week=days_per_week,
+            target_muscles=target_muscles
+        )
         
         # ============================================================
-        # 🔥 CRIAR WORKOUT (PRIVADO DO USUÁRIO)
+        # 6️⃣ CRIAR WORKOUT PRIVADO
         # ============================================================
-        
-        # Nome do treino com timestamp para unicidade
-        workout_name = f"Treino Personalizado IA - {timezone.now().strftime('%d/%m/%Y')}"
+        workout_name = f"Treino {focus.title()} IA - {timezone.now().strftime('%d/%m/%Y')}"
         
         workout = Workout.objects.create(
             name=workout_name,
-            description=f"Treino semanal gerado por IA com {days_per_week} dias de treino. Foco: {focus}. Criado via chatbot.",
+            description=f"Treino semanal personalizado ({days_per_week} dias/semana). Foco: {focus}. Dificuldade: {difficulty}.",
             difficulty_level=difficulty,
-            estimated_duration=days_per_week * 45,  # ~45min por dia
-            target_muscle_groups=', '.join([weekly_structure[d]['description'] for d in days_to_generate if weekly_structure[d]['exercises_count'] > 0]),
+            estimated_duration=days_per_week * 45,
+            target_muscle_groups=', '.join(set([weekly_structure[d]['description'] for d in weekly_structure if weekly_structure[d]['exercises_count'] > 0])),
             equipment_needed=user_preferences.get('equipment', 'Variado'),
-            calories_estimate=300,
-            workout_type='full_body' if focus == 'full_body' else focus,
+            calories_estimate=300 * days_per_week,
+            workout_type=focus if focus in ['cardio', 'strength'] else 'strength',
             
-            # ✅ CAMPOS CRÍTICOS PARA PRIVACIDADE
-            is_personalized=True,           # Treino personalizado
-            created_by_user=request.user,   # Dono do treino
-            is_recommended=True,            # Aparece na seção de recomendados
-            is_active=True,                 # Ativo
+            is_personalized=True,
+            created_by_user=request.user,
+            is_recommended=True,
+            is_active=True,
         )
         
-        print(f'✅ Workout PRIVADO criado: {workout.name} (ID: {workout.id})')
-        print(f'   Dono: {request.user.email}')
-        print(f'   is_personalized: True')
-        print(f'   is_recommended: True')
+        print(f'✅ Workout criado: {workout.name} (ID: {workout.id})')
         
         # ============================================================
-        # GERAR WORKOUT_PLAN COM CAMPO 'day'
+        # 7️⃣ ADICIONAR EXERCÍCIOS
         # ============================================================
-        
         workout_plan = []
         order_counter = 1
         
-        for day_name in days_to_generate:
-            day_info = weekly_structure[day_name]
-            
+        for day_key, day_info in weekly_structure.items():
             if day_info['exercises_count'] == 0:
-                continue  # Pular dia de descanso
+                continue
             
-            # Filtrar exercícios do dia
+            # Filtrar exercícios específicos do dia
             day_exercises = [
                 ex for ex in all_exercises 
                 if ex.muscle_group in day_info['muscle_groups']
             ][:day_info['exercises_count']]
             
-            # Se não encontrou exercícios específicos, usar gerais
+            # Fallback se não encontrou exercícios específicos
             if not day_exercises:
                 day_exercises = all_exercises[:day_info['exercises_count']]
             
-            # Adicionar exercícios ao treino
-            for i, exercise in enumerate(day_exercises, 1):
-                # Configurar sets/reps baseado no objetivo
-                if profile.goal == 'lose_weight':
-                    sets, reps, rest = (3, "45-60 seg", 30)
-                elif profile.goal == 'gain_muscle':
-                    sets, reps, rest = (4, "8-12", 90)
-                else:
-                    sets, reps, rest = (3, "12-15", 60)
-                
-                # ✅ CRIAR WorkoutExercise vinculado ao Workout
+            # Configurar sets/reps
+            sets, reps, rest = get_sets_reps_rest(profile.goal, difficulty)
+            
+            for exercise in day_exercises:
                 WorkoutExercise.objects.create(
                     workout=workout,
                     exercise=exercise,
@@ -1042,12 +1044,11 @@ def generate_workout_from_conversation(request):
                     reps=reps,
                     rest_time=rest,
                     order_in_workout=order_counter,
-                    notes=f"{day_name}: {day_info['description']}"
+                    notes=f"{day_key}: {day_info['description']}"
                 )
                 
-                # Para resposta JSON
                 workout_plan.append({
-                    'day': day_name,
+                    'day': day_key,
                     'day_description': day_info['description'],
                     'order': order_counter,
                     'exercise': {
@@ -1057,8 +1058,6 @@ def generate_workout_from_conversation(request):
                         'muscle_group': exercise.muscle_group,
                         'difficulty_level': exercise.difficulty_level,
                         'equipment_needed': exercise.equipment_needed or 'bodyweight',
-                        'duration_minutes': exercise.duration_minutes or 5,
-                        'instructions': exercise.instructions or [],
                     },
                     'sets': sets,
                     'reps': reps,
@@ -1067,57 +1066,116 @@ def generate_workout_from_conversation(request):
                 order_counter += 1
         
         # ============================================================
-        # RESPOSTA NO FORMATO ESPERADO PELO FLUTTER
+        # 8️⃣ RESPOSTA
         # ============================================================
-        
         response_data = {
             'success': True,
-            'workout_id': workout.id,  # ✅ ID do treino criado
+            'workout_created': True,
+            'workout_id': workout.id,
+            'generation_method': 'adaptive_weekly_plan',
+            'source': source,
             'ai_generated_workout': {
                 'plan_info': {
                     'workout_id': workout.id,
                     'workout_name': workout.name,
                     'total_exercises': len(workout_plan),
-                    'estimated_duration': days_per_week * 45,
+                    'estimated_duration': workout.estimated_duration,
+                    'duration_per_day': 45,
                     'focus': focus,
                     'difficulty': difficulty,
                     'days_per_week': days_per_week,
-                    'personalized_for': profile.user.username or profile.user.email,
-                    'is_private': True,  # ✅ Indicador
+                    'is_private': True,
                     'owner': request.user.email,
                 },
                 'workout_plan': workout_plan,
                 'ai_recommendations': {
                     'warm_up': 'Faça 5-10 minutos de aquecimento antes de cada treino',
                     'cool_down': 'Finalize com 5-10 minutos de alongamento',
-                    'hydration': 'Beba água durante o treino',
-                    'progression': 'Aumente a carga gradualmente',
+                    'hydration': 'Mantenha-se hidratado durante o treino',
+                    'progression': 'Aumente a carga gradualmente a cada semana',
                 },
-                'customization_note': f'Plano semanal PRIVADO personalizado para {profile.goal or "fitness geral"}',
             },
+            'metadata': {
+                'generated_at': timezone.now().isoformat(),
+                'conversation_id': conversation_id,
+            }
         }
         
-        print(f'✅ Plano semanal PRIVADO gerado: {len(workout_plan)} exercícios em {days_per_week} dias')
-        print(f'   Workout ID: {workout.id}')
-        print(f'   Dias únicos: {set([ex["day"] for ex in workout_plan])}')
+        print(f'✅ Plano gerado: {len(workout_plan)} exercícios em {days_per_week} dias')
         
         return Response(response_data, status=status.HTTP_201_CREATED)
         
-    except UserProfile.DoesNotExist:
-        return Response({
-            'error': 'Perfil não encontrado',
-            'message': 'Complete seu perfil antes de gerar treinos'
-        }, status=status.HTTP_404_NOT_FOUND)
-        
     except Exception as e:
-        print(f'❌ Erro ao gerar workout do chat: {e}')
-        import traceback
-        traceback.print_exc()
-        
+        logger.error(f'Erro ao gerar workout: {e}', exc_info=True)
         return Response({
             'error': 'Erro ao gerar plano de treino',
             'details': str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# ============================================================
+# FUNÇÕES AUXILIARES
+# ============================================================
+
+def generate_adaptive_structure(focus, days_per_week, target_muscles):
+    """Gera estrutura semanal adaptativa baseada no foco"""
+    
+    if focus == 'legs' or focus == 'lower':
+        # Treino focado em pernas
+        base_structure = {
+            'Dia 1': {'description': 'Quadríceps e Glúteos', 'muscle_groups': ['legs', 'glutes'], 'exercises_count': 5},
+            'Dia 2': {'description': 'Posteriores e Panturrilhas', 'muscle_groups': ['legs'], 'exercises_count': 5},
+            'Dia 3': {'description': 'Glúteos e Abdutores', 'muscle_groups': ['glutes', 'legs'], 'exercises_count': 5},
+            'Dia 4': {'description': 'Pernas Completo', 'muscle_groups': ['legs', 'glutes'], 'exercises_count': 6},
+            'Dia 5': {'description': 'Pernas Leve + Cardio', 'muscle_groups': ['legs', 'cardio'], 'exercises_count': 4},
+        }
+    
+    elif focus == 'upper':
+        base_structure = {
+            'Dia 1': {'description': 'Peito e Tríceps', 'muscle_groups': ['chest', 'arms'], 'exercises_count': 5},
+            'Dia 2': {'description': 'Costas e Bíceps', 'muscle_groups': ['back', 'arms'], 'exercises_count': 5},
+            'Dia 3': {'description': 'Ombros e Trapézio', 'muscle_groups': ['shoulders', 'back'], 'exercises_count': 5},
+            'Dia 4': {'description': 'Peito e Ombros', 'muscle_groups': ['chest', 'shoulders'], 'exercises_count': 5},
+            'Dia 5': {'description': 'Costas e Braços', 'muscle_groups': ['back', 'arms'], 'exercises_count': 5},
+        }
+    
+    elif focus == 'cardio':
+        base_structure = {
+            'Dia 1': {'description': 'Cardio Intenso', 'muscle_groups': ['cardio'], 'exercises_count': 4},
+            'Dia 2': {'description': 'Cardio Moderado', 'muscle_groups': ['cardio'], 'exercises_count': 4},
+            'Dia 3': {'description': 'HIIT', 'muscle_groups': ['cardio'], 'exercises_count': 5},
+            'Dia 4': {'description': 'Cardio Leve', 'muscle_groups': ['cardio'], 'exercises_count': 3},
+            'Dia 5': {'description': 'Cardio + Core', 'muscle_groups': ['cardio', 'core'], 'exercises_count': 5},
+        }
+    
+    else:  # full_body ou outros
+        base_structure = {
+            'Dia 1': {'description': 'Peito e Tríceps', 'muscle_groups': ['chest', 'arms'], 'exercises_count': 5},
+            'Dia 2': {'description': 'Costas e Bíceps', 'muscle_groups': ['back', 'arms'], 'exercises_count': 5},
+            'Dia 3': {'description': 'Pernas e Glúteos', 'muscle_groups': ['legs', 'glutes'], 'exercises_count': 5},
+            'Dia 4': {'description': 'Ombros e Core', 'muscle_groups': ['shoulders', 'core'], 'exercises_count': 5},
+            'Dia 5': {'description': 'Full Body', 'muscle_groups': target_muscles or ['chest', 'back', 'legs'], 'exercises_count': 6},
+        }
+    
+    # Retornar apenas os dias necessários
+    days = list(base_structure.keys())[:days_per_week]
+    return {day: base_structure[day] for day in days}
+
+
+def get_sets_reps_rest(goal, difficulty):
+    """Retorna sets, reps e rest baseado no objetivo e dificuldade"""
+    
+    if goal == 'lose_weight':
+        return (3, "45-60 seg", 30) if difficulty == 'beginner' else (4, "30-45 seg", 25)
+    
+    elif goal == 'gain_muscle':
+        return (3, "8-12", 60) if difficulty == 'beginner' else (4, "6-10", 90)
+    
+    elif goal == 'improve_endurance':
+        return (3, "15-20", 30) if difficulty == 'beginner' else (4, "20-25", 20)
+    
+    else:  # maintain_fitness ou outros
+        return (3, "12-15", 45)
 # FUNÇÕES AUXILIARES
 
 def generate_rule_based_workout(duration, focus, difficulty, profile):

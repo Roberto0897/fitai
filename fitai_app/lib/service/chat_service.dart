@@ -16,6 +16,8 @@ class ChatService extends ChangeNotifier {
   bool _isGeneratingWorkout = false;
   Map<String, dynamic>? _lastGeneratedWorkout;
 
+  Map<String, dynamic>? _detectedPlanInfo;
+
   // Getters
   ChatConversation? get currentConversation => _currentConversation;
   List<ChatMessage> get messages => _messages;
@@ -26,6 +28,7 @@ class ChatService extends ChangeNotifier {
   bool get isGeneratingWorkout => _isGeneratingWorkout;
   Map<String, dynamic>? get lastGeneratedWorkout => _lastGeneratedWorkout;
 
+  Map<String, dynamic>? get detectedPlanInfo => _detectedPlanInfo;
   // ============================================================
   // INICIAR CONVERSA
   // ============================================================
@@ -86,15 +89,32 @@ class ChatService extends ChangeNotifier {
   // ENVIAR MENSAGEM COM DETECÇÃO DE AÇÃO
   // ============================================================
 
-  Future<bool> sendMessage(String text) async {
-  if (_currentConversation == null) {
-    debugPrint('⚠️ Nenhuma conversa ativa');
-    return false;
-  }
-
+ Future<bool> sendMessage(String text) async {
   if (text.trim().isEmpty) {
     debugPrint('⚠️ Mensagem vazia');
     return false;
+  }
+
+  // ============================================================
+  // ✅ AUTO-RECOVERY: Criar conversa se não existir
+  // ============================================================
+  
+  if (_currentConversation == null) {
+    debugPrint('⚠️ Nenhuma conversa ativa, criando nova...');
+    
+    final success = await startConversation(
+      type: ConversationType.generalFitness,
+      forceNew: true,
+    );
+    
+    if (!success) {
+      debugPrint('❌ Não foi possível criar conversa');
+      _error = 'Erro ao iniciar conversa';
+      notifyListeners();
+      return false;
+    }
+    
+    debugPrint('✅ Nova conversa criada automaticamente');
   }
 
   try {
@@ -118,59 +138,84 @@ class ChatService extends ChangeNotifier {
       message: text,
     );
 
-    debugPrint('📦 Resposta completa: ${response.toString()}');
-
-    // Adicionar resposta da IA
-    if (response['ai_response'] != null) {
-      final aiResponse = response['ai_response'];
-      
+    // 🔍 Verificar se backend retornou plan_info
+  if (response.containsKey('plan_info') && response['plan_info'] != null) {
+    _detectedPlanInfo = response['plan_info'] as Map<String, dynamic>;
+    
+    debugPrint('✅ Plan info detectado:');
+    debugPrint('   Dias: ${_detectedPlanInfo!['days_per_week']}');
+    debugPrint('   Foco: ${_detectedPlanInfo!['focus']}');
+    debugPrint('   Dificuldade: ${_detectedPlanInfo!['difficulty']}');
+  }
+    
+    // ============================================================
+    // ✅ PROCESSAR RESPOSTA (CAMINHO CORRETO)
+    // ============================================================
+    
+    // Extrair conteúdo da IA
+    final aiContent = response['ai_response']?['content'] as String?;
+    
+    if (aiContent != null && aiContent.isNotEmpty) {
       final aiMessage = ChatMessage(
-        id: aiResponse['message_id'],
-        text: aiResponse['content'],
+        text: aiContent,
         isUser: false,
         timestamp: DateTime.now(),
-        intent: aiResponse['intent_detected'],
-        confidence: aiResponse['confidence_score']?.toDouble(),
-        metadata: aiResponse,
       );
       _messages.add(aiMessage);
-
-      // 🔥 FIX: Verificar action PRIMEIRO
-      if (response.containsKey('action') && response['action'] == 'generate_workout') {
-        debugPrint('🎯 ACTION DETECTADA: generate_workout');
-        
-        final preferences = response['workout_preferences'];
-        debugPrint('   Preferências: $preferences');
-        
-        // Chamar geração automática
-        await _generateWorkoutWithPreferences(preferences);
-      }
-      // DEPOIS verificar no aiResponse
-      else if (aiResponse['action'] == 'generate_workout') {
-        debugPrint('🎯 ACTION no aiResponse: generate_workout');
-        
-        final preferences = aiResponse['workout_preferences'];
-        await _generateWorkoutWithPreferences(preferences);
-      }
-
-      // Processar opções para UI
-      if (aiResponse['options'] != null) {
-        debugPrint('📋 Opções: ${aiResponse['options'].length}');
-      }
+      debugPrint('✅ Resposta da IA adicionada: ${aiContent.substring(0, 50)}...');
+    } else {
+      debugPrint('⚠️ Resposta da IA vazia');
     }
 
-    debugPrint('✅ Mensagem processada');
     _isSending = false;
     notifyListeners();
+    
+    debugPrint('✅ Mensagem processada');
     return true;
     
+  } on ApiException catch (e) {
+    // ============================================================
+    // ✅ RECOVERY: Se conversa não existe (404), criar nova
+    // ============================================================
+    
+    if (e.statusCode == 404) {
+      debugPrint('⚠️ Conversa ${_currentConversation!.id} não existe mais');
+      
+      // Limpar conversa inválida
+      _currentConversation = null;
+      
+      // Remover mensagem otimista
+      if (_messages.isNotEmpty && _messages.last.isUser) {
+        _messages.removeLast();
+      }
+      
+      debugPrint('🔄 Tentando reenviar em nova conversa...');
+      
+      // Reenviar mensagem (vai criar nova conversa via check acima)
+      _isSending = false;
+      notifyListeners();
+      
+      return await sendMessage(text); // Recursão segura
+    }
+    
+    // Outros erros
+    debugPrint('❌ Erro API: ${e.message}');
+    _error = 'Erro ao enviar mensagem';
+    
+    if (_messages.isNotEmpty && _messages.last.isUser) {
+      _messages.removeLast();
+    }
+
+    _isSending = false;
+    notifyListeners();
+    return false;
+    
   } catch (e, stackTrace) {
-    debugPrint('❌ Erro: $e');
+    debugPrint('❌ Erro inesperado: $e');
     debugPrint('Stack: $stackTrace');
     
     _error = 'Erro ao enviar mensagem';
     
-    // Remover mensagem otimista
     if (_messages.isNotEmpty && _messages.last.isUser) {
       _messages.removeLast();
     }
@@ -346,6 +391,7 @@ class ChatService extends ChangeNotifier {
 // 🔥 GERAR TREINO MANUAL (CHAMADA DIRETA)
 // ============================================================
 
+
 /// Método público para gerar treino manualmente (ex: botão na UI)
 Future<bool> generateWorkoutFromConversation() async {
   if (_currentConversation == null) {
@@ -360,11 +406,23 @@ Future<bool> generateWorkoutFromConversation() async {
     notifyListeners();
 
     debugPrint('🏋️ Gerando treino manual');
+    
+    // ✅ VERIFICAR SE TEM plan_info DETECTADO
+    if (_detectedPlanInfo != null) {
+      debugPrint('✅ Usando plan_info detectado do chat:');
+      debugPrint('   Dias: ${_detectedPlanInfo!['days_per_week']}');
+      debugPrint('   Foco: ${_detectedPlanInfo!['focus']}');
+      debugPrint('   Dificuldade: ${_detectedPlanInfo!['difficulty']}');
+    } else {
+      debugPrint('⚠️ Nenhum plan_info detectado, usando fallback genérico');
+    }
 
+    // 🔥 CORREÇÃO: PASSAR planInfo como primeiro argumento
     final response = await ApiService.generateWorkoutFromChat(
       conversationId: _currentConversation!.id,
-      daysPerWeek: 5,
-      focus: 'full_body',
+      planInfo: _detectedPlanInfo,  // ✅ USAR O DETECTADO!
+      daysPerWeek: 5,               // Fallback se planInfo for null
+      focus: 'full_body',           // Fallback se planInfo for null
     );
 
     debugPrint('📦 Resposta do backend (manual):');

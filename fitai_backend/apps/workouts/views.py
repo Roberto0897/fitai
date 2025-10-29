@@ -81,15 +81,23 @@ def recommended_workouts(request):
         # ✅ FILTRO CORRETO: APENAS TREINOS DE IA DO USUÁRIO ATUAL
         # ============================================================
         
+         # Query base
         workouts = Workout.objects.filter(
-            is_recommended=True,           # ✅ Gerado pela IA
-            is_personalized=True,          # ✅ Personalizado
-            created_by_user=request.user,  # ✅ CRÍTICO: Apenas do usuário atual
-            is_active=True                 # ✅ Apenas ativos
-        ).order_by('-created_at')[:10]     # ✅ Mais recentes primeiro, limite 10
+            is_recommended=True,
+            is_personalized=True,
+            created_by_user=request.user,
+            is_active=True
+        ).order_by('-created_at')[:50]
         
-        print(f'🤖 [RECOMENDADOS] Usuário: {request.user.username}')
-        print(f'   Treinos encontrados: {workouts.count()}')
+        # DEBUG COMPLETO
+        print("="*80)
+        print(f"🔍 DEBUG RECOMMENDED_WORKOUTS")
+        print(f"User: {request.user.username}")
+        print(f"Total na query: {workouts.count()}")
+        print("IDs retornados:")
+        for w in workouts:
+            print(f"  {w.id}: {w.name} | {w.created_at}")
+        print("="*80)
         
         data = []
         for workout in workouts:

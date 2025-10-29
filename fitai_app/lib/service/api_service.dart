@@ -877,18 +877,41 @@ static Future<Map<String, dynamic>> refreshDailyAIRecommendation() async {
 
   /// Gerar treino a partir do chat
   static Future<Map<String, dynamic>> generateWorkoutFromChat({
-    int? conversationId,
-    int? daysPerWeek,
-    String? focus,
-  }) async {
-    return await post('/recommendations/generate-workout-from-chat/', {
-      if (conversationId != null) 'conversation_id': conversationId,
-      'user_preferences': {
-        if (daysPerWeek != null) 'days_per_week': daysPerWeek,
-        if (focus != null) 'focus': focus,
-      },
-    });
+  required int conversationId,
+  Map<String, dynamic>? planInfo,
+  int? daysPerWeek,
+  String? focus,
+}) async {
+  final body = <String, dynamic>{
+    'conversation_id': conversationId,
+  };
+  
+  // Priorizar plan_info se existe
+  if (planInfo != null) {
+    body['plan_info'] = planInfo;
+    print('📦 Enviando plan_info detectado no chat');
+    print('   Dias: ${planInfo['days_per_week']}');
+    print('   Foco: ${planInfo['focus']}');
+    print('   Dificuldade: ${planInfo['difficulty']}');
+  } else {
+    // Fallback: user_preferences
+    body['user_preferences'] = <String, dynamic>{};
+    
+    if (daysPerWeek != null) {
+      body['user_preferences']['days_per_week'] = daysPerWeek;
+    }
+    
+    if (focus != null) {
+      body['user_preferences']['focus'] = focus;
+    }
+    
+    print('📦 Enviando user_preferences (fallback)');
+    print('   Dias: $daysPerWeek');
+    print('   Foco: $focus');
   }
+  
+  return await post('/recommendations/generate-workout-from-chat/', body);
+}
   
   // ============================================================
   // TESTE DE CONEXÃO

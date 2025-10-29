@@ -848,6 +848,7 @@ class ChatService:
                         difficulty_level=plan_info.get('difficulty', 'intermediate'),
                         created_by_user=user,  # 🔥 Campo correto para associar ao usuário
                         is_recommended=True,  # 🔥 Marcar como treino recomendado pela IA
+                        is_personalized=True,
                     )
                     
                     logger.info(f"✅ Workout criado: {workout.name} (ID: {workout.id})")
